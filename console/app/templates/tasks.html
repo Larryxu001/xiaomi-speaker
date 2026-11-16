@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}定时任务 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>定时任务</h1>
+    <p>到点自动让音箱说话：固定的提醒，或者让 AI 现查现总结。</p>
+  </div>
+  <button type="button" class="btn-primary" id="new-task-btn" aria-expanded="{{ 'true' if error else 'false' }}" aria-controls="new-task">新建任务</button>
+</div>
+
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+
+<form class="panel" id="new-task" method="post" action="/tasks" {% if not error %}hidden{% endif %}>
+  <div class="panel-head"><h2>新建任务</h2></div>
+  <div class="panel-body">
+    <div class="field">
+      <span class="label">类型</span>
+      <div class="segmented" role="radiogroup" aria-label="任务类型">
+        <input type="radio" id="kind-ann" name="kind" value="announcement" {{ 'checked' if form.get('kind', 'announcement') == 'announcement' }}>
+        <label for="kind-ann">固定提醒</label>
+        <input type="radio" id="kind-ai" name="kind" value="news_analysis" {{ 'checked' if form.get('kind') == 'news_analysis' }}>
+        <label for="kind-ai">AI 分析播报</label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="name">名称</label>
+      <input id="name" type="text" name="name" value="{{ form.get('name', '') }}" placeholder="例如：早间新闻" required maxlength="40">
+    </div>
+    <div class="field">
+      <label for="payload" id="payload-label">要说的内容</label>
+      <textarea id="payload" name="payload" required maxlength="500">{{ form.get('payload', '') }}</textarea>
+      <p class="hint" id="payload-hint"></p>
+    </div>
+    <fieldset class="field" id="sources-field">
+      <legend class="label">内容来源（可多选，按点选的先后顺序播报）</legend>
+      <div class="chips" id="src-chips">
+        {% for src in sources %}
+        <label class="chip"><input type="checkbox" name="source_ids" value="{{ src.id }}" {{ 'checked' if src.id in form.get('source_ids', []) }}> <b class="order" aria-hidden="true"></b>{{ src.name }}</label>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="source_order" id="source_order" value="{{ form.get('source_ids', []) | join(',') }}">
+      <p class="hint" id="order-hint"></p>
+      <div class="field" style="margin-top:12px">
+        <label for="length">播报长度</label>
+        <select id="length" name="length">
+          {% for v, t in [('short', '简短，约 1 分钟'), ('standard', '标准，约 3 分钟'), ('long', '详细，约 5 分钟'), ('full', '完整：每个来源前 10 条，按顺序逐条播')] %}<option value="{{ v }}" {{ 'selected' if form.get('length', 'standard') == v }}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <p class="hint">勾选后只用这些来源的内容播报，不再联网随机搜索。不勾就按上面的话题联网搜索。来源在页面下方管理。</p>
+    </fieldset>
+    <div class="row">
+      <div class="field">
+        <label for="recurrence">重复</label>
+        <select id="recurrence" name="recurrence">
+          {% for v, t in [('daily', '每天'), ('weekdays', '工作日（周一至周五）'), ('weekly', '每周一次'), ('once', '只执行一次')] %}
+          <option value="{{ v }}" {{ 'selected' if form.get('recurrence', 'daily') == v }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field" id="weekday-field">
+        <label for="weekday">星期</label>
+        <select id="weekday" name="weekday">
+          {% for d in ['周一','周二','周三','周四','周五','周六','周日'] %}
+          <option value="{{ loop.index0 }}" {{ 'selected' if form.get('weekday') == loop.index0|string }}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field" id="time-field">
+        <label for="run_at" id="run-at-label">时间</label>
+        <input id="run_at" type="text" name="run_at" value="{{ form.get('run_at', '') }}" required inputmode="numeric" autocomplete="off">
+      </div>
+    </div>
+    <div class="actions" style="display:flex; gap:10px; margin-top:20px">
+      <button type="submit" class="btn-primary" data-busy="创建中…">创建任务</button>
+      <button type="button" class="btn-secondary" id="cancel-new">取消</button>
+    </div>
+  </div>
+</form>
+
+{% if tasks %}
+<section class="panel">
+  <table class="table">
+    <thead>
+      <tr><th>任务</th><th>时间</th><th>启用</th><th style="text-align:right">操作</th></tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr class="{{ '' if t.enabled else 'disabled' }}">
+        <td>
+          <div class="name">{{ t.name }} {% if t.kind == 'news_analysis' %}<span class="badge plain">AI</span>{% endif %}</div>
+          <div class="payload">{{ t.payload }}</div>
+          {% if t.source_names %}<div class="payload">来源：{{ t.source_names | join('、') }}
+            <form class="inline" method="post" action="/tasks/{{ t.id }}/length" style="margin-left:6px">
+              <select name="length" onchange="this.form.submit()" aria-label="播报长度" style="width:auto;padding:2px 6px;font-size:12px">
+                {% for v, tl in [('short', '简短'), ('standard', '标准'), ('long', '详细'), ('full', '完整')] %}<option value="{{ v }}" {{ 'selected' if (t.length or 'standard') == v }}>{{ tl }}</option>{% endfor %}
+              </select>
+            </form></div>{% endif %}
+        </td>
+        <td class="sched">
+          {{ fmt_schedule(t) }}
+          {% if t.last_run_at %}<div class="payload">上次 {{ t.last_run_at | fmt_time }}</div>{% endif %}
+        </td>
+        <td>
+          <form class="switch" method="post" action="/tasks/{{ t.id }}/toggle">
+            <button type="submit" aria-pressed="{{ 'true' if t.enabled else 'false' }}" aria-label="{{ '停用' if t.enabled else '启用' }}「{{ t.name }}」"></button>
+          </form>
+        </td>
+        <td class="actions">
+          <form class="inline" method="post" action="/tasks/{{ t.id }}/run">
+            <button type="submit" class="btn-ghost" data-busy="{{ '生成中…' if t.kind == 'news_analysis' else '发送中…' }}">立即试播</button>
+          </form>
+          <form class="inline" method="post" action="/tasks/{{ t.id }}/delete" onsubmit="return confirm('删除「{{ t.name }}」？删除后无法恢复。')">
+            <button type="submit" class="btn-ghost danger">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="panel empty-state">
+  <div class="panel-body" style="text-align:center; padding:40px 24px">
+    <p style="font-weight:600; margin:0 0 4px">还没有定时任务</p>
+    <p class="muted" style="margin:0 0 16px">比如每个工作日早上 7:30 播今天的财经要闻，或者每晚 10 点提醒你早点休息。</p>
+    <button type="button" class="btn-secondary" data-open-new>新建第一个任务</button>
+  </div>
+</section>
+{% endif %}
+
+<h2 class="section-title" id="sources">内容来源</h2>
+{% if source_error %}<div class="flash error" role="alert">{{ source_error }}</div>{% endif %}
+<section class="panel">
+  <table class="table">
+    <thead><tr><th>名称</th><th>类型</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>
+      {% for src in sources %}
+      <tr>
+        <td><div class="name">{{ src.name }}</div><div class="payload">{{ src.target }}{% if src.follow %}，取标题含「{{ src.follow }}」的最新一篇{% endif %}</div>
+          <div class="payload preview" id="preview-{{ src.id }}" hidden></div></td>
+        <td>{{ source_kinds[src.kind] }}</td>
+        <td class="actions">
+          <button type="button" class="btn-ghost" data-preview="{{ src.id }}">看看内容</button>
+          <form class="inline" method="post" action="/sources/{{ src.id }}/delete" onsubmit="return confirm('删除来源「{{ src.name }}」？用到它的任务会跳过它。')">
+            <button type="submit" class="btn-ghost danger">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<form class="panel" method="post" action="/sources">
+  <div class="panel-head"><h2>添加来源</h2></div>
+  <div class="panel-body">
+    <div class="field">
+      <span class="label">类型</span>
+      <div class="segmented" role="radiogroup" aria-label="来源类型">
+        <input type="radio" id="sk-nn" name="kind" value="newsnow" checked><label for="sk-nn">NewsNow 热榜</label>
+        <input type="radio" id="sk-rh" name="kind" value="rsshub"><label for="sk-rh">RSSHub</label>
+        <input type="radio" id="sk-rss" name="kind" value="rss"><label for="sk-rss">RSS 订阅</label>
+        <input type="radio" id="sk-web" name="kind" value="web"><label for="sk-web">网页</label>
+      </div>
+    </div>
+    <fieldset class="field" data-for="newsnow">
+      <legend class="label">平台（勾上就添加，取消勾选就移除，改完点下面的按钮保存）</legend>
+      {% set have = sources | selectattr('kind', 'equalto', 'newsnow') | map(attribute='target') | list %}
+      {% for group, items in newsnow_platforms %}
+      <p class="hint" style="margin:8px 0 4px">{{ group }}</p>
+      <div class="chips">
+        {% for pid, pname in items %}<label class="chip"><input type="checkbox" name="newsnow_ids" value="{{ pid }}" {{ 'checked' if pid in have }}> {{ pname }}</label>{% endfor %}
+      </div>
+      {% endfor %}
+      <input type="text" name="newsnow_custom" placeholder="列表里没有的平台，填 NewsNow 代号，例如 36kr-renqi" style="margin-top:8px">
+    </fieldset>
+    <div class="field" data-for="rsshub" hidden>
+      <label for="rsshub_route">路由</label>
+      <select id="rsshub_route" name="rsshub_route">
+        {% for group, items in rsshub_routes %}<optgroup label="{{ group }}">
+          {% for r, rname in items %}<option value="{{ r }}">{{ rname }}</option>{% endfor %}
+        </optgroup>{% endfor %}
+      </select>
+      <input type="text" name="rsshub_custom" placeholder="其他路由，例如 /eastmoney/report/macresearch，见 docs.rsshub.app" style="margin-top:8px">
+      <p class="hint">用的是服务器上装好的 RSSHub（「应用」页），列表里的路由都实测能用。部分路由（微博、雪球、V2EX）需要登录 Cookie 才能取到。</p>
+    </div>
+    <div class="field" data-for="rss web" hidden>
+      <label for="target">地址</label>
+      <input id="target" type="url" name="target" placeholder="https://">
+      <p class="hint" data-for="rss" hidden>RSSHub 路由、博客订阅都可以。微信公众号可以先装 WeWe-RSS 转成订阅源。</p>
+    </div>
+    <div class="field" data-for="web" hidden>
+      <label for="follow">打开标题含这个词的最新一篇（可不填）</label>
+      <input id="follow" type="text" name="follow" placeholder="例如：财经早餐">
+      <p class="hint">填了就把地址当成文章列表，自动打开最新那篇；不填就直接读这个网页。</p>
+    </div>
+    <div class="row">
+      <div class="field"><label for="src-name">名称（说话时用它指定）</label><input id="src-name" type="text" name="name" maxlength="40" placeholder="NewsNow 可不填"></div>
+      <div class="field"><label for="max_items">最多取几条</label><input id="max_items" type="number" name="max_items" value="10" min="1" max="30"></div>
+    </div>
+    <div class="actions" style="margin-top:16px"><button type="submit" class="btn-secondary" data-busy="保存中…" id="src-submit">添加来源</button></div>
+  </div>
+</form>
+
+<script>
+  (function () {
+    function syncSrc() {
+      var k = document.querySelector('input[name=kind][id^=sk-]:checked').value;
+      document.querySelectorAll('[data-for]').forEach(function (el) { el.hidden = el.dataset.for.split(' ').indexOf(k) < 0; });
+      document.getElementById('src-submit').textContent = k === 'newsnow' ? '保存平台' : '添加来源';
+    }
+    document.querySelectorAll('input[id^=sk-]').forEach(function (r) { r.addEventListener('change', syncSrc); });
+    syncSrc();
+    document.querySelectorAll('[data-preview]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var box = document.getElementById('preview-' + b.dataset.preview);
+        box.hidden = false; box.textContent = '正在抓取…';
+        try {
+          var d = await (await fetch('/api/sources/' + b.dataset.preview + '/preview', { credentials: 'same-origin' })).json();
+          box.textContent = d.ok ? d.items.join('\n') : '取不到：' + d.message;
+        } catch (e) { box.textContent = '取不到：网络错误'; }
+      });
+    });
+  })();
+</script>
+
+<script>
+  (function () {
+    function $(id) { return document.getElementById(id); }
+    var panel = $('new-task'), openBtn = $('new-task-btn');
+    function open() { panel.hidden = false; openBtn.setAttribute('aria-expanded', 'true'); $('name').focus(); }
+    function close() { panel.hidden = true; openBtn.setAttribute('aria-expanded', 'false'); }
+    openBtn.addEventListener('click', function () { panel.hidden ? open() : close(); });
+    $('cancel-new').addEventListener('click', close);
+    document.querySelectorAll('[data-open-new]').forEach(function (b) { b.addEventListener('click', open); });
+
+    // Remember the order sources are ticked in: the briefing plays in that order.
+    var order = ($('source_order').value || '').split(',').filter(Boolean);
+    var names = {};
+    document.querySelectorAll('#src-chips input').forEach(function (c) { names[c.value] = c.parentNode.textContent.trim(); });
+    function syncOrder() {
+      $('source_order').value = order.join(',');
+      document.querySelectorAll('#src-chips input').forEach(function (c) {
+        var i = order.indexOf(c.value);
+        c.parentNode.querySelector('.order').textContent = i < 0 ? '' : (i + 1) + ' ';
+      });
+      $('order-hint').textContent = order.length > 1 ? '播报顺序：' + order.map(function (v) { return names[v]; }).join(' → ') : '';
+    }
+    document.querySelectorAll('#src-chips input').forEach(function (c) {
+      c.addEventListener('change', function () {
+        order = order.filter(function (v) { return v !== c.value; });
+        if (c.checked) order.push(c.value);
+        syncOrder();
+      });
+    });
+    syncOrder();
+
+    var payloadLabel = $('payload-label'), payload = $('payload'), payloadHint = $('payload-hint');
+    function syncKind() {
+      var ai = $('kind-ai').checked;
+      $('sources-field').hidden = !ai;
+      payload.required = !ai;
+      payloadLabel.textContent = ai ? '分析什么' : '要说的内容';
+      payload.placeholder = ai ? '例如：今天 A 股和美股的重要动态，以及对科技股的影响' : '例如：该吃药了，记得饭后半小时';
+      payloadHint.textContent = ai
+        ? '写清楚怎么播，例如「挑三条最重要的，每条一句话」。勾了来源就只用来源内容，不勾就联网搜索这个话题。'
+        : '到点后音箱会原样念出这段话。';
+    }
+    function syncRecurrence() {
+      var r = $('recurrence').value, once = r === 'once';
+      $('weekday-field').hidden = r !== 'weekly';
+      $('run-at-label').textContent = once ? '日期和时间' : '时间';
+      $('run_at').placeholder = once ? '2026-11-20 08:00' : '07:30';
+    }
+    $('kind-ann').addEventListener('change', syncKind);
+    $('kind-ai').addEventListener('change', syncKind);
+    $('recurrence').addEventListener('change', syncRecurrence);
+    syncKind(); syncRecurrence();
+  })();
+</script>
+{% endblock %}

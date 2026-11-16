@@ -1,0 +1,9 @@
+name: 网页阅读（MCP）
+description: 让音箱能打开并读懂任意网址的内容，比如「帮我看看这篇文章讲了什么」。装好后自动接到音箱。
+icon: 🌐
+category: 音箱能力
+memory_mb: 200
+idle_mb: 100
+disk_gb: 1
+web_port: 18103
+mcp_path: /mcp

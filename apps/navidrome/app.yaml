@@ -1,0 +1,9 @@
+name: 音乐库 Navidrome
+description: 自建音乐服务器，把你的歌曲放进去，就能对音箱说「播放周杰伦」。网页上也能听。
+icon: 🎵
+category: 音箱能力
+memory_mb: 200
+idle_mb: 60
+disk_gb: 5
+web_port: 18101
+keep_prefix: true

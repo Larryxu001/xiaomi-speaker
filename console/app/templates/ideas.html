@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}点子 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>点子</h1>
+    <p>每天晚上，音箱会根据它记得的事、最近的对话和你的定时任务，想几个能帮到你的点子。采纳的会直接帮你建好，不要的它会记住、以后少提。</p>
+  </div>
+  <form method="post" action="/ideas"><button type="submit" name="action" value="think" class="btn-primary" data-busy="正在想…">现在想几个</button></form>
+</div>
+
+
+{% set fresh = ideas | selectattr('status', 'equalto', 'new') | list %}
+{% set done = ideas | rejectattr('status', 'equalto', 'new') | list %}
+
+{% if fresh %}
+<div class="idea-list">
+  {% for i in fresh %}
+  <article class="panel idea">
+    <h2 class="idea-title">{{ i.title }}</h2>
+    {% if i.detail %}<p class="idea-detail">{{ i.detail }}</p>{% endif %}
+    {% if i.action.type == 'create_task' %}<p class="idea-plan">采纳后会新建定时任务「{{ i.action.name or i.action.content }}」，{{ i.action.time }}{% if i.action.sources %}，来源：{{ i.action.sources | replace(',', '、') }}{% endif %}</p>
+    {% elif i.action.type == 'add_newsnow_source' %}<p class="idea-plan">采纳后会添加来源「{{ i.action.platform }}」</p>{% endif %}
+    <form method="post" action="/ideas" class="idea-actions">
+      <input type="hidden" name="id" value="{{ i.id }}">
+      <button type="submit" name="action" value="drop" class="btn-ghost">不要</button>
+      <button type="submit" name="action" value="adopt" class="btn-primary" data-busy="处理中…">采纳</button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<section class="panel"><div class="panel-body"><p class="muted" style="margin:0">现在没有待看的点子。每晚 10 点后会想一轮，也可以点「现在想几个」。</p></div></section>
+{% endif %}
+
+{% if done %}
+<h2 class="section-title">处理过的</h2>
+<section class="panel">
+  <ul class="list">
+    {% for i in done[:30] %}
+    <li class="panel-body">
+      <span class="badge {{ 'ok' if i.status == 'adopted' else 'plain' }}">{{ '已采纳' if i.status == 'adopted' else '不要' }}</span>
+      {{ i.title }}{% if i.result %}<span class="muted">　{{ i.result }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

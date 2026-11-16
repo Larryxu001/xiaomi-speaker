@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}登录 · 小米音箱控制台{% endblock %}
+{% block auth %}
+<div class="auth-card">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 10v4M10 7v10M14 9v6M18 11v2"/></svg>
+    </span>
+    <span class="brand-name">小米音箱控制台</span>
+  </div>
+  <div class="panel">
+    <form class="panel-body" method="post" action="/login">
+      {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+      <div class="field">
+        <label for="password">管理密码</label>
+        <input id="password" type="password" name="password" required autofocus autocomplete="current-password">
+      </div>
+      <div class="field">
+        <button type="submit" class="btn-primary btn-block">登录</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+services:
+  app:
+    image: searxng/searxng:2026.11.14-a7128d5d1
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18104:8080"
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+      SEARXNG_BASE_URL: https://searxng.speaker.xulangli.com.cn/
+    volumes:
+      - ${APP_DATA}/config:/etc/searxng

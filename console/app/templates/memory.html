@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}记忆 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>记忆</h1>
+    <p>音箱从对话里记住的关于你的事，越聊越懂你。也可以对它说「记住我不吃香菜」「你记得我什么」「忘掉这件事」。</p>
+  </div>
+</div>
+
+
+<form method="post" action="/memory" class="panel panel-body memory-bar">
+  <div>
+    <strong>自动学习{{ '已开启' if enabled else '已关闭' }}</strong>
+    <p class="hint" style="margin:2px 0 0">
+      {% if enabled %}每次对话安静下来约 1 分半后，自动整理出值得记住的事。{% else %}关闭后只记你明确让它记的事。{% endif %}
+      {% if pending %}有 {{ pending }} 轮对话等待整理。{% endif %}
+    </p>
+  </div>
+  <div class="button-row" style="margin:0">
+    {% if pending %}<button type="submit" name="action" value="learn" class="btn-secondary" data-busy="整理中…">现在整理</button>{% endif %}
+    <button type="submit" name="action" value="toggle" class="btn-ghost">{{ '关闭自动学习' if enabled else '开启自动学习' }}</button>
+  </div>
+</form>
+
+<section class="panel">
+  {% if memories %}
+  <ul class="list memory-list">
+    {% for m in memories %}
+    <li>
+      <form method="post" action="/memory" class="memory-row">
+        <input type="hidden" name="id" value="{{ m.id }}">
+        <select name="category" aria-label="分类">
+          {% for c in categories %}<option {{ 'selected' if c == m.category }}>{{ c }}</option>{% endfor %}
+        </select>
+        <input type="text" name="content" value="{{ m.content }}" aria-label="记忆内容" maxlength="200">
+        <span class="when" title="更新于 {{ m.updated_at }}">{{ m.source }}</span>
+        <button type="submit" name="action" value="save" class="btn-ghost">保存</button>
+        <button type="submit" name="action" value="delete" class="btn-ghost danger" onclick="return confirm('删除这条记忆？')">删除</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">还没有记忆。和音箱多聊几句，或者在下面手动加一条。</p>
+  {% endif %}
+</section>
+
+<form method="post" action="/memory" class="panel panel-body">
+  <input type="hidden" name="action" value="add">
+  <div class="memory-row">
+    <select name="category" aria-label="分类">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+    <input type="text" name="content" placeholder="例如：用户叫阿浪；用户早上七点起床；用户关注 A 股科技板块" maxlength="200" required>
+    <button type="submit" class="btn-primary">添加</button>
+  </div>
+</form>
+{% endblock %}

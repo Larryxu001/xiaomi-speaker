@@ -1,0 +1,9 @@
+name: 备忘录 Memos
+description: 轻量的个人笔记和备忘录，随手记想法、待办，手机网页都能用。
+icon: 📝
+category: 工具
+memory_mb: 120
+idle_mb: 40
+disk_gb: 1
+web_port: 18107
+route: subdomain

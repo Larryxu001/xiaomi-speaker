@@ -1,0 +1,9 @@
+name: 网易云音乐 API
+description: 开源的网易云音乐接口（社区 api-enhanced 维护版）。装好后自动加到「音乐」的音源里，扫码登录你自己的账号就能点歌；能放哪些歌取决于你账号的会员权益。
+icon: 🎵
+category: 音箱能力
+memory_mb: 200
+idle_mb: 80
+disk_gb: 1
+web_port: 18109
+internal: true

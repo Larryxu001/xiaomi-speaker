@@ -1,0 +1,40 @@
+.DS_Store
+
+# Local runtime configuration and secrets.
+agent.yaml
+xiaoai-agent/agent.yaml
+xiaoai-agent/AGENT_SECRETS.local.md
+*.local.md
+
+# Rust build outputs.
+target/
+xiaoai-agent/target/
+
+# Open-XiaoAI patch tool generated firmware/output.
+deploy/client-patch/temp/
+deploy/client-patch/assets/*
+!deploy/client-patch/assets/
+!deploy/client-patch/assets/.gitkeep
+
+# JS dependencies.
+node_modules/
+deploy/client-patch/node_modules/
+
+# Device/test logs and transient audio.
+*.log
+*.pcm
+*.wav
+*.aiff
+*.s16le
+xiaoai_asr_probe/libaivs_sdk.so
+
+experiments/
+backup/
+
+# Device-specific firmware dumps and unpacked Xiaomi rootfs: never publish
+backups-*/
+deploy/flash-tool/*.bin
+deploy/flash-tool/oh2p-audit/
+# Console runtime data (SQLite with API keys) and local venvs
+console/data/
+console/.venv/

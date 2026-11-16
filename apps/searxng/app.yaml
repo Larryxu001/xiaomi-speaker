@@ -1,0 +1,13 @@
+name: 聚合搜索 SearXNG
+description: 自建搜索引擎，同时查多个搜索引擎、不留记录。不需要 API Key，以后可作为音箱的免费联网搜索。
+icon: 🔍
+category: 音箱能力
+memory_mb: 250
+idle_mb: 150
+disk_gb: 1
+web_port: 18104
+params:
+  - key: SEARXNG_SECRET
+    label: 加密密钥
+    generate: true
+internal: true

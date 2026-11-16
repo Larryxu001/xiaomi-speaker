@@ -1,0 +1,15 @@
+# The official fetch MCP server speaks stdio; supergateway exposes it as
+# Streamable HTTP so the speaker can connect. uvx downloads the Python
+# package on first start (from the Tsinghua PyPI mirror for mainland China).
+services:
+  app:
+    image: supercorp/supergateway:4.2.2-uvx
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18103:8000"
+    environment:
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+    volumes:
+      - ${APP_DATA}/cache:/root/.cache
+    command: ["--stdio", "uvx mcp-server-fetch", "--outputTransport", "streamableHttp", "--port", "8000"]

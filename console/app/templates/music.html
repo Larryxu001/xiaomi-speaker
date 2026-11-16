@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}音乐 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>音乐</h1>
+    <p>说「小爱同学，播放周杰伦」或「打开音乐之声」，音箱按下面的顺序在各个音源里找，先找到先播。</p>
+  </div>
+</div>
+
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+
+<section class="panel">
+  <div class="panel-body">
+    <div class="upload-row">
+      <input id="try-q" type="search" placeholder="试搜一下，例如：音乐之声、周杰伦 晴天" aria-label="试搜">
+      <button type="button" class="btn-secondary" id="try-btn">试搜</button>
+    </div>
+    <div class="payload preview" id="try-out" hidden></div>
+  </div>
+</section>
+
+<h2 class="section-title">音源</h2>
+<section class="panel">
+  <table class="table">
+    <thead><tr><th style="width:64px">顺序</th><th>音源</th><th>启用</th><th style="text-align:right">操作</th></tr></thead>
+    <tbody>
+      {% for src in sources %}
+      <tr class="{{ '' if src.enabled else 'disabled' }}" data-id="{{ src.id }}">
+        <td class="drag-cell"><span class="drag-handle" title="按住拖动调整顺序" aria-label="拖动调整「{{ src.name }}」的顺序">⠿</span> <span class="rank">{{ loop.index }}</span></td>
+        <td><div class="name">{{ src.name }} {% if loop.first and src.enabled %}<span class="badge ok">优先</span>{% endif %}
+            {% if src.kind in ('netease', 'kugou', 'qqmusic') %}{% if src.config.expired %}<span class="badge warn">登录过期了，请重新扫码</span>{% elif (src.kind == 'qqmusic' and src.config.credential) or (src.kind == 'kugou' and 'token=' in (src.config.cookie or '')) or (src.kind == 'netease' and src.config.cookie) %}<span class="badge ok">已登录</span>{% else %}<span class="badge plain">未登录，只能放免费歌</span>{% endif %}{% endif %}</div>
+          <div class="payload">{{ kinds[src.kind] }}{% if src.config.base_url %}，{{ src.config.base_url }}{% elif src.config.search %}，{{ src.config.search.split('?')[0] }}{% endif %}</div>
+          {% if src.kind in ('netease', 'kugou', 'qqmusic') %}<div class="qr-box" id="qr-{{ src.id }}" hidden></div>{% endif %}</td>
+        <td>
+          <form class="switch" method="post" action="/music/sources/{{ src.id }}/{{ 'disable' if src.enabled else 'enable' }}">
+            <button type="submit" aria-pressed="{{ 'true' if src.enabled else 'false' }}" aria-label="{{ '停用' if src.enabled else '启用' }}「{{ src.name }}」"></button>
+          </form>
+        </td>
+        <td class="actions">
+          {% if src.kind == 'netease' %}<button type="button" class="btn-ghost" data-qr="{{ src.id }}" data-app="网易云音乐">扫码登录</button>{% endif %}
+          {% if src.kind == 'kugou' %}<button type="button" class="btn-ghost" data-qr="{{ src.id }}" data-app="酷狗音乐">酷狗扫码</button><button type="button" class="btn-ghost" data-qr="{{ src.id }}" data-type="wx" data-app="微信">微信扫码</button>{% endif %}
+          {% if src.kind == 'qqmusic' %}<button type="button" class="btn-ghost" data-qr="{{ src.id }}" data-type="qq" data-app="QQ">QQ 扫码</button><button type="button" class="btn-ghost" data-qr="{{ src.id }}" data-type="wx" data-app="微信">微信扫码</button>{% endif %}
+          {% if not loop.first %}<form class="inline" method="post" action="/music/sources/{{ src.id }}/first"><button type="submit" class="btn-ghost">优先使用</button></form>{% endif %}
+          <form class="inline" method="post" action="/music/sources/{{ src.id }}/delete" onsubmit="return confirm('删除音源「{{ src.name }}」？')">
+            <button type="submit" class="btn-ghost danger">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">还没有音源，在下面添加一个。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<form class="panel" method="post" action="/music/sources">
+  <div class="panel-head"><h2>添加音源</h2></div>
+  <div class="panel-body">
+    <div class="field">
+      <span class="label">类型</span>
+      <div class="segmented" role="radiogroup" aria-label="音源类型">
+        <input type="radio" id="mk-ne" name="kind" value="netease" checked><label for="mk-ne">网易云</label>
+        <input type="radio" id="mk-qq" name="kind" value="qqmusic"><label for="mk-qq">QQ 音乐</label>
+        <input type="radio" id="mk-kg" name="kind" value="kugou"><label for="mk-kg">酷狗</label>
+        <input type="radio" id="mk-lib" name="kind" value="library"><label for="mk-lib">我的曲库</label>
+        <input type="radio" id="mk-custom" name="kind" value="custom"><label for="mk-custom">自定义音源</label>
+      </div>
+    </div>
+    <div data-mk="netease">
+      <p class="hint">先在「应用」里装「网易云音乐 API」（装好会自动加到这里），添加后点「扫码登录」用网易云 App 扫一下。免费账号只能完整播放免费歌，会员账号和你 App 里一样。</p>
+      <div class="field"><label for="ne-url">API 地址</label><input id="ne-url" type="url" name="base_url" value="{{ netease_app }}" placeholder="装好应用后自动填写"></div>
+    </div>
+    <div data-mk="qqmusic" hidden>
+      <p class="hint">直接在控制台里运行，不用装应用。添加后点「QQ 扫码」或「微信扫码」登录你自己的 QQ 音乐账号；会员账号能听的歌，音箱都能放。周杰伦等网易云没有的歌一般在这里。</p>
+    </div>
+    <div data-mk="kugou" hidden>
+      <p class="hint">先在「应用」里装「酷狗音乐 API」（装好会自动加到这里），添加后点「扫码登录」用酷狗 App 扫一下。不登录的话酷狗不给播放地址。</p>
+      <div class="field"><label for="kg-url">API 地址</label><input id="kg-url" type="url" name="base_url" value="{{ kugou_app }}" placeholder="装好应用后自动填写"></div>
+    </div>
+    <div data-mk="library" hidden>
+      <p class="hint">你自己的歌：应用里装好 Navidrome（可以配合 AList 挂网盘），或任何 Subsonic 兼容的音乐服务器。地址要让音箱能访问到。</p>
+      <div class="row">
+        <div class="field"><label for="m-url">地址</label><input id="m-url" type="url" name="base_url" placeholder="https://navidrome.speaker.xulangli.com.cn"></div>
+        <div class="field"><label for="m-user">用户名</label><input id="m-user" type="text" name="username" autocomplete="off"></div>
+        <div class="field"><label for="m-pass">密码</label><input id="m-pass" type="password" name="password" autocomplete="new-password"></div>
+      </div>
+    </div>
+    <div data-mk="custom" hidden>
+      <p class="hint">接入你自己找到的音乐接口。用 JSON 描述它：<code>search</code> 是搜索地址（<code>{q}</code> 换成歌名，<code>{limit}</code> 换成条数），<code>list</code> 是结果列表所在的位置，<code>id</code>、<code>name</code>、<code>artist</code>、<code>album</code> 是每首歌里对应的字段，用点号表示层级，数字表示第几个。播放地址二选一：<code>url</code> 填取地址的接口（<code>{id}</code> 换成歌曲 id，<code>url_path</code> 指出返回里地址的位置；接口本身就返回音频时 <code>url_path</code> 留空），或者用 <code>url_field</code> 指出搜索结果里直接带的地址字段。<code>random</code> 可选，填随机推荐接口；<code>headers</code> 可放需要的请求头。</p>
+      <div class="field">
+        <label for="m-preset">从模板开始</label>
+        <select id="m-preset">
+          {% for name in presets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label for="m-cfg">配置</label><textarea id="m-cfg" name="custom_config" rows="14" spellcheck="false" style="font-family:ui-monospace,monospace">{{ example }}</textarea></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="m-name">名称</label><input id="m-name" type="text" name="name" maxlength="40" placeholder="例如：我的曲库"></div>
+      <div class="field"><label for="m-pos">顺序（小的先找）</label><input id="m-pos" type="number" name="position" value="50" min="0" max="999"></div>
+    </div>
+    <div class="actions" style="margin-top:16px"><button type="submit" class="btn-primary" data-busy="添加中…">添加音源</button></div>
+  </div>
+</form>
+
+<script>
+  (function () {
+    function sync() {
+      var k = document.querySelector('input[name=kind]:checked').value;
+      document.querySelectorAll('[data-mk]').forEach(function (el) { el.hidden = el.dataset.mk !== k; });
+    }
+    document.querySelectorAll('input[name=kind]').forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+    // Only the visible kind's fields are submitted (two kinds share "base_url").
+    document.querySelector('form[action="/music/sources"]').addEventListener('submit', function () {
+      document.querySelectorAll('[data-mk]').forEach(function (el) {
+        el.querySelectorAll('input, textarea, select').forEach(function (i) { i.disabled = el.hidden; });
+      });
+    });
+    document.querySelectorAll('[data-qr]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var id = b.dataset.qr, box = document.getElementById('qr-' + id);
+        // A new click replaces the old code: stop polling the old one.
+        var run = (box.dataset.run = String(Date.now()));
+        box.hidden = false; box.textContent = '正在获取二维码…';
+        var d = await (await fetch('/api/music/' + id + '/qr?type=' + (b.dataset.type || 'qq'), { method: 'POST', credentials: 'same-origin' })).json();
+        if (!d.ok) { box.textContent = d.message; return; }
+        box.innerHTML = '<img alt="登录二维码" width="160" height="160"><p class="hint"></p>';
+        box.querySelector('p').textContent = '用' + (b.dataset.app || '') + ' App 扫码并确认登录';
+        box.querySelector('img').src = d.img;
+        var tries = 0;
+        var p = box.querySelector('p');
+        (async function poll() {
+          if (box.dataset.run !== run) return;
+          if (++tries > 90) { p.textContent = '二维码过期了，再点一次扫码'; return; }
+          var r;
+          try {
+            r = await (await fetch('/api/music/' + id + '/qr/' + encodeURIComponent(d.key), { credentials: 'same-origin' })).json();
+          } catch (e) { setTimeout(poll, 3000); return; }  // network blip: keep trying
+          if (box.dataset.run !== run) return;
+          if (!r.ok) { p.textContent = '登录没成功：' + (r.message || '请重新扫码'); return; }
+          var st = r.state;
+          if (st === 'done') { p.textContent = '登录成功'; setTimeout(function () { location.reload(); }, 800); return; }
+          if (st === 'expired') { p.textContent = '二维码过期了，再点一次扫码'; return; }
+          if (st === 'scanned') p.textContent = '已扫码，请在手机上点「确认登录」';
+          setTimeout(poll, 1500);
+        })();
+      });
+    });
+    // Drag rows by the handle to change the search order (mouse and touch).
+    (function () {
+      var tbody = document.querySelector('.panel .table tbody');
+      if (!tbody) return;
+      var dragging = null;
+      function renumber() {
+        tbody.querySelectorAll('tr[data-id]').forEach(function (tr, i) { tr.querySelector('.rank').textContent = i + 1; });
+      }
+      function save() {
+        var ids = Array.prototype.map.call(tbody.querySelectorAll('tr[data-id]'), function (tr) { return Number(tr.dataset.id); });
+        fetch('/api/music/order', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids }) });
+      }
+      tbody.addEventListener('pointerdown', function (e) {
+        var handle = e.target.closest('.drag-handle');
+        if (!handle) return;
+        dragging = handle.closest('tr');
+        dragging.classList.add('dragging');
+        handle.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+      tbody.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        var rows = Array.prototype.filter.call(tbody.querySelectorAll('tr[data-id]'), function (r) { return r !== dragging; });
+        var after = rows.find(function (r) { var b = r.getBoundingClientRect(); return e.clientY < b.top + b.height / 2; });
+        if (after) tbody.insertBefore(dragging, after); else tbody.appendChild(dragging);
+        renumber();
+      });
+      function end() {
+        if (!dragging) return;
+        dragging.classList.remove('dragging');
+        dragging = null;
+        save();
+      }
+      tbody.addEventListener('pointerup', end);
+      tbody.addEventListener('pointercancel', end);
+    })();
+    var PRESETS = {{ presets | tojson }};
+    var presetSel = document.getElementById('m-preset');
+    presetSel.addEventListener('change', function () { document.getElementById('m-cfg').value = PRESETS[presetSel.value]; });
+    var out = document.getElementById('try-out'), audio = null;
+    async function tryIt() {
+      var q = document.getElementById('try-q').value.trim(); if (!q) return;
+      out.hidden = false; out.textContent = '正在搜索…';
+      var d = await (await fetch('/api/music/try?q=' + encodeURIComponent(q), { credentials: 'same-origin' })).json();
+      if (!d.ok) { out.textContent = '没找到：' + d.message; return; }
+      out.textContent = d.songs.map(function (s, i) { return (i + 1) + '. ' + s.name + (s.artists.length ? ' · ' + s.artists.join('/') : ''); }).join('\n') + '\n\n第一首可以播放，正在浏览器里试听…';
+      if (audio) audio.pause();
+      audio = new Audio(d.first_url); audio.play().catch(function () { out.textContent += '（浏览器无法直接播放这种格式，音箱上可以）'; });
+    }
+    document.getElementById('try-btn').addEventListener('click', tryIt);
+    document.getElementById('try-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); tryIt(); } });
+  })();
+</script>
+{% endblock %}

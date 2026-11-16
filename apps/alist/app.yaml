@@ -1,0 +1,9 @@
+name: 网盘挂载 AList
+description: 把阿里云盘、百度网盘、夸克等挂到一起统一管理；音乐库可以直接读网盘里的歌。初始管理员密码在「日志」里。
+icon: 🗂️
+category: 工具
+memory_mb: 150
+idle_mb: 50
+disk_gb: 1
+web_port: 18108
+route: subdomain

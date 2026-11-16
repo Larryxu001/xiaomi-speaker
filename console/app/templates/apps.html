@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}应用 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>应用</h1>
+    <p>装在服务器上的开源软件，装好后自动接到音箱。也可以说「小爱同学，安装……」。</p>
+  </div>
+</div>
+
+{% if request.query_params.get('err') %}<div class="flash error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
+
+{% if job_id %}
+<section class="panel job-panel" id="job" data-job="{{ job_id }}">
+  <div class="panel-head"><h2 id="job-title">正在处理…</h2><span class="badge" id="job-state">进行中</span></div>
+  <div class="panel-body" id="job-missing" hidden><p style="font-weight:600; margin:0 0 8px">需要你自己下载的镜像</p></div>
+  <pre class="log" id="job-log">等待安装器响应…</pre>
+</section>
+{% endif %}
+
+{% if unavailable %}
+<section class="panel">
+  <div class="panel-body">
+    <p style="font-weight:600; margin:0 0 4px">安装器还没有启用</p>
+    <p class="muted" style="margin:0">{{ unavailable }} 安装器是服务器上负责装软件的小程序，启用后这里会显示可安装的应用。</p>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <dl class="facts" style="border-top:0">
+    <div><dt>可用内存</dt><dd>{{ status.memory_available_mb }} MB</dd></div>
+    <div><dt>可用硬盘</dt><dd>{{ status.disk_free_gb }} GB</dd></div>
+    <div><dt>应用网址</dt><dd>控制台网址 /apps/…</dd></div>
+    <div><dt>已安装</dt><dd>{{ apps | selectattr('state.installed') | list | length }} 个</dd></div>
+  </dl>
+</section>
+
+{% if apps %}
+{% for cat, group in apps | groupby('category') %}
+<h2 class="section-title">{{ cat or '其他' }}</h2>
+<div class="app-grid">
+  {% for a in group %}
+  <section class="panel app-card">
+    <div class="panel-body">
+      <div class="app-head">
+        <span class="app-icon" aria-hidden="true">{{ a.icon or '🧩' }}</span>
+        <div>
+          <h2>{{ a.name }}</h2>
+          {% if a.state.installed %}
+            <span class="badge {{ 'ok' if a.state.running else 'warn' }}">{{ '运行中' if a.state.running else '已停止' }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <p class="muted">{{ a.description }}</p>
+      <p class="hint">平时约占 {{ a.idle_mb or a.memory_mb }} MB 内存（上限 {{ a.memory_mb }} MB）、{{ a.disk_gb }} GB 硬盘{% if a.mcp_path %}，自带 MCP，装好后自动接到音箱{% endif %}{% if a.internal %}，只给控制台和音箱内部使用{% endif %}{% if a.route == 'subdomain' %}，有独立网址（需要 DNS 泛解析，没有也能先装）{% endif %}</p>
+      <details class="image-info">
+        <summary>镜像 {% if a.images and a.images | selectattr('present') | list | length == a.images | length %}<span class="badge ok">已在服务器上</span>{% else %}<span class="badge plain">安装时下载</span>{% endif %}</summary>
+        {% for im in a.images or [] %}
+        <div class="image-row">
+          <code>{{ im.image }}</code> {% if im.present %}<span class="badge ok">已就绪</span>{% endif %}
+          {% if not im.present %}
+          <p class="hint">服务器下载不到时：<a href="{{ im.link }}" target="_blank" rel="noopener">Docker Hub 页面</a>，或在能访问的电脑上运行：</p>
+          <pre class="cmd">{{ im.save_command }}</pre>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </details>
+      {% if a.state.installed %}
+      <div class="app-actions">
+        {% if a.state.url and not a.internal %}<a class="btn btn-secondary" href="{{ a.state.url }}" target="_blank" rel="noopener">打开</a>
+        {% elif a.state.route == 'subdomain' and not a.state.url %}<form class="inline" method="post" action="/apps/{{ a.id }}/certify"><button type="submit" class="btn-secondary" data-busy="申请证书中…" title="需要先加 *.{{ status.app_domain }} 的 DNS 泛解析">启用网址</button></form>{% endif %}
+        <form class="inline" method="post" action="/apps/{{ a.id }}/{{ 'stop' if a.state.running else 'start' }}">
+          <button type="submit" class="btn-secondary">{{ '停止' if a.state.running else '启动' }}</button>
+        </form>
+        <a class="btn btn-ghost" href="/apps/{{ a.id }}/logs" target="_blank" rel="noopener">日志</a>
+        <form class="inline" method="post" action="/apps/{{ a.id }}/uninstall" onsubmit="return confirm('卸载「{{ a.name }}」？数据默认保留。')">
+          <button type="submit" class="btn-ghost danger">卸载</button>
+        </form>
+      </div>
+      {% else %}
+      <form method="post" action="/apps/{{ a.id }}/install" class="install-form">
+        {% for p in a.params or [] %}
+        <div class="field">
+          <label for="p-{{ a.id }}-{{ p.key }}">{{ p.label or p.key }}</label>
+          <input id="p-{{ a.id }}-{{ p.key }}" type="{{ 'password' if 'PASSWORD' in p.key else 'text' }}" name="param_{{ p.key }}"
+                 value="{{ p.default or '' }}" {% if p.required %}required{% endif %}
+                 placeholder="{{ '留空自动生成' if p.generate else '' }}" autocomplete="off">
+        </div>
+        {% endfor %}
+        <div class="app-actions">
+          <button type="submit" class="btn-primary" data-busy="提交中…">安装</button>
+          <button type="submit" class="btn-ghost" name="dry_run" value="1">先演练一下</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<h2 class="section-title">上传镜像</h2>
+<form class="panel upload-form" method="post" action="/apps/images/upload" enctype="multipart/form-data">
+  <div class="panel-body">
+    <p class="muted" style="margin:0 0 12px">服务器下载不到某个镜像时，用卡片上的命令在能访问 Docker Hub 的电脑上导出，再从这里上传。</p>
+    <div class="upload-row">
+      <input type="file" name="file" accept=".tar,.gz,.tgz,application/gzip,application/x-tar" required>
+      <button type="submit" class="btn-secondary" data-busy="上传中…">上传并导入</button>
+    </div>
+  </div>
+</form>
+{% else %}
+<section class="panel">
+  <div class="panel-body" style="text-align:center; padding:40px 24px">
+    <p style="font-weight:600; margin:0 0 4px">商店里还没有应用</p>
+    <p class="muted" style="margin:0">安装框架已经就绪。确定要装什么软件后，把它加进仓库的 apps 目录，这里就会出现可安装的卡片。</p>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+
+{% if job_id %}
+<script>
+  (function () {
+    var box = document.getElementById('job'), id = box.dataset.job;
+    var title = document.getElementById('job-title'), state = document.getElementById('job-state'), log = document.getElementById('job-log');
+    var names = { install: '安装', uninstall: '卸载', load: '导入镜像' };
+    async function tick() {
+      var r = await fetch('/api/jobs/' + id, { credentials: 'same-origin' }), d = await r.json();
+      var kind = names[d.kind] || '处理';
+      log.textContent = (d.log || []).join('\n') || '…';
+      log.scrollTop = log.scrollHeight;
+      if (d.status === 'running') { title.textContent = '正在' + kind + '…'; setTimeout(tick, 2000); return; }
+      if (d.status === 'done') {
+        var dry = d.result && d.result.dry_run;
+        title.textContent = dry ? '演练完成：检查都通过了，没有安装任何东西' : kind + '完成';
+        state.textContent = '完成'; state.className = 'badge ok';
+        if (!dry) setTimeout(function () { location.href = '/apps'; }, 2500);
+      } else {
+        title.textContent = kind + '失败：' + (d.error || '原因不明');
+        state.textContent = '失败'; state.className = 'badge warn';
+        if (d.missing_images && d.missing_images.length) {
+          var help = document.getElementById('job-missing');
+          help.hidden = false;
+          d.missing_images.forEach(function (m) {
+            var row = document.createElement('div'); row.className = 'image-row';
+            row.innerHTML = '<code></code><p class="hint"><a target="_blank" rel="noopener">在 Docker Hub 查看</a>，或在能访问的电脑上运行下面的命令，再把生成的文件在页面下方「上传镜像」处上传：</p><pre class="cmd"></pre>';
+            row.querySelector('code').textContent = m.image;
+            row.querySelector('a').href = m.link;
+            row.querySelector('pre').textContent = m.save_command;
+            help.appendChild(row);
+          });
+        }
+      }
+    }
+    tick();
+  })();
+</script>
+{% endif %}
+{% endblock %}

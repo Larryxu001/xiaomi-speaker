@@ -1,0 +1,13 @@
+services:
+  console:
+    build: .
+    container_name: xiaoai-console
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8000"   # reverse-proxy (nginx) terminates TLS and forwards here
+    volumes:
+      - ./data:/data
+      # Host-side installer (installer/installer.py): its Unix socket and shared
+      # secret. Absent until the installer is set up; the 应用 page says so.
+      - /run/xiaomi-speaker-installer:/run/xiaomi-speaker-installer
+      - /etc/xiaomi-speaker:/etc/xiaomi-speaker:ro

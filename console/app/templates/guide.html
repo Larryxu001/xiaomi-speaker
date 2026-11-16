@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}玩法 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>玩法</h1>
+    <p>先说「小爱同学」，再说下面的话。回答完 15 秒内可以直接接着说，不用再唤醒。也可以问它「你会做什么」。</p>
+  </div>
+</div>
+<div class="guide-grid">
+  {% for scene, icon, items in scenes %}
+  <section class="panel panel-body">
+    <h2 class="guide-title"><span aria-hidden="true">{{ icon }}</span> {{ scene }}</h2>
+    <ul class="guide-list">
+      {% for phrase, note in items %}
+      <li><span class="say">「{{ phrase }}」</span>{% if note %}<span class="hint">{{ note }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

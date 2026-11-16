@@ -1,0 +1,11 @@
+services:
+  app:
+    image: diygod/rsshub:2026-11-14
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18102:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "600"

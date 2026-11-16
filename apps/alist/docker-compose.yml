@@ -1,0 +1,11 @@
+services:
+  app:
+    image: xhofe/alist:v3.66.0
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18108:5244"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ${APP_DATA}/data:/opt/alist/data

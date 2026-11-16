@@ -1,0 +1,18 @@
+# 应用目录模板。复制这个文件夹并改名（小写字母、数字、-），就是一个新应用。
+# 以 _ 开头的文件夹不会出现在商店里，所以这个模板本身不能被安装。
+name: 示例应用
+description: 一句话说明它能让音箱做什么。
+icon: 🧩
+# 估计占用。安装器装之前会核对服务器剩余资源，不够就拒绝。
+memory_mb: 256
+idle_mb: 100  # 平时实际占用，安装时按它判断内存够不够；memory_mb 是上限
+disk_gb: 1
+# 有网页时填容器映射到本机的端口，会自动得到 https://<文件夹名>.speaker.xulangli.com.cn
+web_port: 18100
+# 应用自带 MCP 服务时填路径。安装后自动接到音箱，并用随机 Token 保护。
+mcp_path: /mcp
+# 安装时要用户填的参数。generate: true 表示留空时自动生成随机值（适合密码）。
+params:
+  - key: ADMIN_PASSWORD
+    label: 管理员密码
+    generate: true

@@ -1,0 +1,9 @@
+name: 自动化 n8n
+description: 拖拽式自动化工作流，连接邮件、日历、网页和各种服务，比如「老板来邮件就让音箱播报」。
+icon: ⚙️
+category: 自动化
+memory_mb: 450
+idle_mb: 250
+disk_gb: 2
+web_port: 18105
+route: subdomain

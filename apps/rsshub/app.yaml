@@ -1,0 +1,9 @@
+name: 新闻源 RSSHub
+description: 把上千个网站（微博热搜、知乎、财联社、36 氪等）变成订阅源，定时新闻分析可以从这里取最新内容。
+icon: 📰
+category: 音箱能力
+memory_mb: 300
+idle_mb: 180
+disk_gb: 1
+web_port: 18102
+internal: true

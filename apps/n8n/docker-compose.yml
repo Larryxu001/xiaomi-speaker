@@ -1,0 +1,16 @@
+services:
+  app:
+    image: n8nio/n8n:2.48.4
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18105:5678"
+    environment:
+      N8N_HOST: n8n.speaker.xulangli.com.cn
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n.speaker.xulangli.com.cn/
+      GENERIC_TIMEZONE: Asia/Shanghai
+      TZ: Asia/Shanghai
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      - ${APP_DATA}/data:/home/node/.n8n

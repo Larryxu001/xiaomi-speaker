@@ -1,0 +1,9 @@
+name: 服务监控 Uptime Kuma
+description: 盯着你的网站和服务，挂了就通知。可以配置成通过音箱播报故障。
+icon: 📈
+category: 工具
+memory_mb: 200
+idle_mb: 120
+disk_gb: 1
+web_port: 18106
+route: subdomain

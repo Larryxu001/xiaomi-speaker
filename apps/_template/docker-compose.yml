@@ -1,0 +1,15 @@
+# 安装器会提供这些变量：
+#   APP_DATA    这个应用的数据目录（卸载时默认保留）
+#   APP_MEMORY  app.yaml 里的 memory_mb，用作内存上限
+#   以及 app.yaml params 里的每个 key
+services:
+  app:
+    image: example/image:1.0.0        # 写死版本号，不要用 latest
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18100:8080"        # 只绑本机；对外由 nginx 转发
+    volumes:
+      - ${APP_DATA}:/data
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}

@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block title %}模型与密钥 · 小米音箱控制台<script>
+  // A saved key shows as sk-u••••••••f895; clicking selects it so a paste replaces it.
+  document.querySelectorAll('.key-field').forEach(function (el) {
+    el.addEventListener('focus', function () { if (el.value.indexOf('••') >= 0) el.select(); });
+  });
+</script>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>模型与密钥</h1>
+    <p>音箱听懂你说的话、想好怎么回答、用什么声音说出来，都在这里设置。</p>
+  </div>
+</div>
+
+<nav class="jump" aria-label="本页分区">
+  <a href="#sec-llm">对话模型</a><a href="#sec-asr">语音识别</a><a href="#sec-voice">音色与对话</a><a href="#sec-search">联网搜索</a><a href="#sec-about">关于你</a>
+</nav>
+
+{% if errors %}
+<div class="flash error" role="alert">{% for e in errors %}{{ e }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>
+{% endif %}
+{% if profile_error %}<div class="flash error" role="alert">{{ profile_error }}</div>{% endif %}
+{% if request.query_params.get('msg') == 'saved' %}<div class="flash ok" role="status">已保存，音箱 20 秒内用上新设置。</div>{% endif %}
+
+<form method="post" action="/config" id="config-form">
+
+  <section class="settings-section" id="sec-llm">
+    <header>
+      <h2>对话模型</h2>
+      <p>理解问题、组织回答。可以存多套档案，随时手动或用语音切换。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-body">
+        <h3 class="subhead">正在使用</h3>
+      <div class="field">
+        <label for="llm-preset">服务商</label>
+        <select id="llm-preset" data-preset-for="llm">
+          <option value="">自定义</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="qwen">通义千问</option>
+          <option value="openai">OpenAI</option>
+          <option value="claude">Claude</option>
+        </select>
+        <p class="hint">选一个自动填好地址和模型；用中转服务选「自定义」。</p>
+      </div>
+      <div class="field">
+        <span class="label">接口协议</span>
+        <div class="segmented" role="radiogroup" aria-label="接口协议">
+          <input type="radio" id="proto-openai" name="llm_protocol" value="open_ai_chat" {{ 'checked' if s.llm_protocol != 'anthropic' }}>
+          <label for="proto-openai">OpenAI 兼容</label>
+          <input type="radio" id="proto-anthropic" name="llm_protocol" value="anthropic" {{ 'checked' if s.llm_protocol == 'anthropic' }}>
+          <label for="proto-anthropic">Anthropic 兼容</label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="llm_base_url">接口地址</label>
+        <input id="llm_base_url" type="text" name="llm_base_url" value="{{ s.llm_base_url }}" required spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="llm_api_key">API Key</label>
+        <div class="key-input">
+          <input id="llm_api_key" type="text" class="key-field" name="llm_api_key" value="{{ tails.llm }}" placeholder="粘贴 API Key" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field model-field" data-kind="llm">
+        <div class="label-row">
+          <label for="llm_model">模型</label>
+          <div class="probe-actions">
+            <button type="button" class="btn-ghost" data-action="list">获取模型列表</button>
+            <button type="button" class="btn-ghost" data-action="test">测试连接</button>
+          </div>
+        </div>
+        <select id="llm_model_select" class="model-select" hidden aria-label="从列表选择模型"></select>
+        <input id="llm_model" type="text" name="llm_model" value="{{ s.llm_model }}" required spellcheck="false" autocomplete="off">
+        <p class="probe-status" role="status" aria-live="polite"></p>
+        <p class="hint">点「获取模型列表」从服务商拉取可用模型，也可以直接输入模型名。</p>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="llm_max_tokens">回答长度上限</label>
+          <input id="llm_max_tokens" type="number" name="llm_max_tokens" value="{{ s.llm_max_tokens }}" min="50" max="4000" step="50">
+          <p class="hint">单位是 token，600 大约能说 400 个汉字。越长念得越久。</p>
+        </div>
+        <div class="field">
+          <label for="llm_temperature">随机程度</label>
+          <input id="llm_temperature" type="number" name="llm_temperature" value="{{ s.llm_temperature }}" min="0" max="1" step="0.1">
+          <p class="hint">0 到 1。越低回答越稳定，越高越有变化。</p>
+        </div>
+      </div>
+      </div>
+
+      <div class="panel-body subpanel">
+        <h3 class="subhead">已存的档案 <span class="subhead-note">一键切换，也可以对音箱说「对话模型切换到通义」</span></h3>
+        {% if profiles %}
+        <ul class="list compact">
+          {% for p in profiles %}
+          <li>
+            <div class="text"><strong>{{ p.name }}</strong> {% if p.name == current_profile %}<span class="badge ok">当前</span>{% endif %}
+              <div class="when">{{ p.model }} · {{ p.base_url }}</div></div>
+            <div class="row-actions">
+              {% if p.name != current_profile %}<button type="submit" class="btn-ghost" formaction="/profiles/{{ p.id }}/apply?kind=llm" formnovalidate>切换到这个</button>{% endif %}
+              <button type="submit" class="btn-ghost danger" formaction="/profiles/{{ p.id }}/delete?kind=llm" formnovalidate onclick="return confirm('删除模型档案「{{ p.name }}」？')">删除</button>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="inline-form">
+          <label for="profile-name" class="visually-hidden">档案名称</label>
+          <input id="profile-name" type="text" name="profile_name_llm" placeholder="给当前已保存的模型起个名字，例如：通义" maxlength="30">
+          <button type="submit" class="btn-secondary" formaction="/profiles?kind=llm" formnovalidate>另存为档案</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="settings-section" id="sec-asr">
+    <header>
+      <h2>语音识别</h2>
+      <p>把你说的话转成文字。可以存多套档案，随时手动或用语音切换。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-body">
+        <h3 class="subhead">正在使用</h3>
+      <div class="field">
+        <label for="asr-preset">服务商</label>
+        <select id="asr-preset" data-preset-for="asr">
+          <option value="">自定义</option>
+          <option value="deepseek">DeepSeek 语音识别</option>
+          <option value="siliconflow">硅基流动 SenseVoice</option>
+          <option value="openai">OpenAI Whisper（需海外网络）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="asr_base_url">接口地址</label>
+        <input id="asr_base_url" type="text" name="asr_base_url" value="{{ s.asr_base_url }}" required spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="asr_api_key">API Key</label>
+        <div class="key-input">
+          <input id="asr_api_key" type="text" class="key-field" name="asr_api_key" value="{{ tails.asr }}" placeholder="粘贴 API Key" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field model-field" data-kind="asr">
+        <div class="label-row">
+          <label for="asr_model">模型</label>
+          <div class="probe-actions">
+            <button type="button" class="btn-ghost" data-action="list">获取模型列表</button>
+            <button type="button" class="btn-ghost" data-action="test">测试连接</button>
+          </div>
+        </div>
+        <select id="asr_model_select" class="model-select" hidden aria-label="从列表选择模型"></select>
+        <input id="asr_model" type="text" name="asr_model" value="{{ s.asr_model }}" required spellcheck="false" autocomplete="off">
+        <p class="probe-status" role="status" aria-live="polite"></p>
+        <p class="hint">语音类模型会排在列表最前面。</p>
+      </div>
+      </div>
+      <div class="panel-body subpanel">
+        <h3 class="subhead">已存的档案 <span class="subhead-note">一键切换，也可以对音箱说「语音识别换成硅基流动」</span></h3>
+        {% if asr_profiles %}
+        <ul class="list compact">
+          {% for p in asr_profiles %}
+          <li>
+            <div class="text"><strong>{{ p.name }}</strong> {% if p.name == current_asr_profile %}<span class="badge ok">当前</span>{% endif %}
+              <div class="when">{{ p.model }} · {{ p.base_url }}</div></div>
+            <div class="row-actions">
+              {% if p.name != current_asr_profile %}<button type="submit" class="btn-ghost" formaction="/profiles/{{ p.id }}/apply?kind=asr" formnovalidate>切换到这个</button>{% endif %}
+              <button type="submit" class="btn-ghost danger" formaction="/profiles/{{ p.id }}/delete?kind=asr" formnovalidate onclick="return confirm('删除语音识别档案「{{ p.name }}」？')">删除</button>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="inline-form">
+          <label for="asr-profile-name" class="visually-hidden">档案名称</label>
+          <input id="asr-profile-name" type="text" name="profile_name_asr" placeholder="给当前已保存的语音识别起个名字，例如：DeepSeek" maxlength="30">
+          <button type="submit" class="btn-secondary" formaction="/profiles?kind=asr" formnovalidate>另存为档案</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-section" id="sec-voice">
+    <header>
+      <h2>音色与对话</h2>
+      <p>音箱说话的声音和对话节奏。随时可以在这里换，也可以对音箱说「换成云扬的声音」「换个东北话」。</p>
+    </header>
+    <div class="panel panel-body">
+      <div class="row">
+        <div class="field">
+          <label for="tts_voice">音色</label>
+          <select id="tts_voice" name="tts_voice">
+            {% for group, items in voices %}<optgroup label="{{ group }}">
+              {% for vid, label in items %}<option value="{{ vid }}" {{ 'selected' if s.tts_voice == vid }}>{{ label }}</option>{% endfor %}
+            </optgroup>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="tts_rate">语速</label>
+          <select id="tts_rate" name="tts_rate">
+            {% for v, t in [('slow', '慢一点'), ('normal', '正常'), ('fast', '快一点')] %}<option value="{{ v }}" {{ 'selected' if s.tts_rate == v }}>{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label for="listen_seconds">说完一句后，等你接着说多久</label>
+        <select id="listen_seconds" name="listen_seconds">
+          {% for v, t in [('10', '10 秒'), ('15', '15 秒（推荐）'), ('20', '20 秒'), ('40', '40 秒'), ('60', '1 分钟')] %}<option value="{{ v }}" {{ 'selected' if (s.listen_seconds or '15') == v }}>{{ t }}</option>{% endfor %}
+        </select>
+        <p class="hint">这段时间里不用再喊「小爱同学」，直接说就行。越长越容易把旁边人的说话也收进来；原生小爱大约是 8 秒。说「关闭」「退出」「没了」会立刻结束。</p>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label class="check"><input type="checkbox" name="barge_in" value="1" {{ 'checked' if s.barge_in != '0' }}> 说话时可以直接插话打断</label>
+        <p class="hint">音箱回答时你直接开口，它会停下来听你说，不用等它说完。偶尔被自己的声音打断的话，可以关掉。</p>
+      </div>
+      <div class="button-row">
+        <button type="button" class="btn-secondary" id="voice-preview">在浏览器试听</button>
+        <button type="button" class="btn-ghost" id="voice-speaker">让音箱用已保存的音色说一句</button>
+        <span class="hint" id="voice-msg" role="status"></span>
+      </div>
+      <p class="hint">微软音色免费；DeepSeek 和 CosyVoice 按字数少量计费，分别用对话模型和语音识别里的 Key。非原生音色每句话大约慢半秒到一秒。</p>
+    </div>
+  </section>
+
+  <section class="settings-section" id="sec-search">
+    <header>
+      <h2>联网搜索</h2>
+      <p>问新闻、实时信息时先上网查。可以在这里切换服务，也可以说「联网搜索换成 Firecrawl」「关闭联网搜索」。</p>
+    </header>
+    <div class="panel panel-body">
+      <div class="field">
+        <label class="check"><input type="checkbox" name="web_search_enabled" value="1" {{ 'checked' if s.web_search_enabled == '1' }}> 开启联网搜索</label>
+      </div>
+      <div class="field" data-search="tavily">
+        <label for="web_search_api_key">Tavily API Key</label>
+        <div class="key-input">
+          <input id="web_search_api_key" type="text" class="key-field" name="web_search_api_key" value="{{ tails.search }}" placeholder="在 tavily.com 免费申请" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field" data-search="firecrawl">
+        <label for="firecrawl_api_key">Firecrawl API Key</label>
+        <div class="key-input">
+          <input id="firecrawl_api_key" type="text" class="key-field" name="firecrawl_api_key" value="{{ tails.firecrawl }}" placeholder="在 firecrawl.dev 申请" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">使用的服务</span>
+        <div class="segmented" role="radiogroup" aria-label="联网搜索使用的服务">
+          <input type="radio" id="sp-tavily" name="search_provider" value="tavily" {{ 'checked' if s.search_provider != 'firecrawl' }}>
+          <label for="sp-tavily">Tavily</label>
+          <input type="radio" id="sp-firecrawl" name="search_provider" value="firecrawl" {{ 'checked' if s.search_provider == 'firecrawl' }}>
+          <label for="sp-firecrawl">Firecrawl</label>
+        </div>
+        <p class="hint">Tavily 快一些；Firecrawl 能按日期只取当天的新闻。音箱问答和定时任务都用这里选的。</p>
+      </div>
+      <div class="field search-test">
+        <button type="button" class="btn-secondary" id="search-test">测试搜索（测试上面选中的服务）</button>
+        <p class="probe-status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-section" id="sec-about">
+    <header>
+      <h2>关于你</h2>
+      <p>音箱聊天和生成播报时都会参考这些，更懂你。比如怎么称呼你、作息、关注什么、喜欢什么样的回答。</p>
+    </header>
+    <div class="panel panel-body">
+      <div class="field">
+        <label for="profile_notes">称呼、偏好、作息和关注领域</label>
+        <textarea id="profile_notes" name="profile_notes" placeholder="例如：叫我阿浪；关注科技和财经新闻；喜欢简短直接的回答；晚上 10 点以后不要播报">{{ s.profile_notes }}</textarea>
+      </div>
+      <div class="field">
+        <label for="timezone">时区</label>
+        <input id="timezone" type="text" name="timezone" value="{{ s.timezone }}" spellcheck="false">
+        <p class="hint">定时任务按这个时区执行。国内保持 Asia/Shanghai 即可。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="savebar">
+    <p class="hint">所有设置一起保存，音箱 20 秒内用上。</p>
+    <button type="submit" class="btn-primary" data-busy="保存中…">保存设置</button>
+  </div>
+</form>
+
+<script>
+  var PRESETS = {
+    llm: {
+      deepseek: { protocol: 'open_ai_chat', base_url: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
+      qwen:     { protocol: 'open_ai_chat', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+      openai:   { protocol: 'open_ai_chat', base_url: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      claude:   { protocol: 'anthropic',    base_url: 'https://api.anthropic.com', model: 'claude-sonnet-5-5' }
+    },
+    asr: {
+      deepseek:    { base_url: 'https://api.deepseek.com/v1/tools/asr', model: 'deepseek-asr' },
+      siliconflow: { base_url: 'https://api.siliconflow.cn/v1', model: 'FunAudioLLM/SenseVoiceSmall' },
+      openai:      { base_url: 'https://api.openai.com/v1', model: 'whisper-1' }
+    }
+  };
+  function $(id) { return document.getElementById(id); }
+  // Show which preset matches the saved settings.
+  ['llm', 'asr'].forEach(function (kind) {
+    var sel = $(kind + '-preset'), url = $(kind + '_base_url').value.replace(/\/+$/, '');
+    Object.keys(PRESETS[kind]).forEach(function (k) {
+      if (PRESETS[kind][k].base_url === url) sel.value = k;
+    });
+    sel.addEventListener('change', function () {
+      var p = PRESETS[kind][sel.value];
+      if (!p) return;
+      $(kind + '_base_url').value = p.base_url;
+      $(kind + '_model').value = p.model;
+      if (p.protocol) {
+        $(p.protocol === 'anthropic' ? 'proto-anthropic' : 'proto-openai').checked = true;
+      }
+      var key = $(kind + '_api_key');
+      key.focus();
+    });
+  });
+</script>
+<script>
+  (function () {
+    function $(id) { return document.getElementById(id); }
+    function protocol() { return $('proto-anthropic').checked ? 'anthropic' : 'open_ai_chat'; }
+    function setStatus(el, ok, text) {
+      el.textContent = text;
+      el.className = 'probe-status ' + (ok === null ? 'pending' : ok ? 'ok' : 'error');
+    }
+    async function call(path, body) {
+      try {
+        var r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(body), credentials: 'same-origin' });
+        return await r.json();
+      } catch (e) {
+        return { ok: false, message: '请求控制台失败，请检查网络后重试。' };
+      }
+    }
+    function probeBody(kind) {
+      return { kind: kind, protocol: kind === 'llm' ? protocol() : 'open_ai_chat',
+               base_url: $(kind + '_base_url').value, api_key: $(kind + '_api_key').value,
+               model: $(kind + '_model').value };
+    }
+    function fillSelect(kind, models) {
+      var sel = $(kind + '_model_select'), input = $(kind + '_model'), current = input.value.trim();
+      sel.innerHTML = '';
+      models.forEach(function (m) { sel.add(new Option(m, m)); });
+      sel.add(new Option('手动输入其他模型…', '__custom__'));
+      if (models.indexOf(current) >= 0) { sel.value = current; input.hidden = true; }
+      else if (current) { sel.value = '__custom__'; input.hidden = false; }
+      else { sel.value = models[0]; input.value = models[0]; input.hidden = true; }
+      sel.hidden = false;
+    }
+    document.querySelectorAll('.model-field').forEach(function (field) {
+      var kind = field.dataset.kind, status = field.querySelector('.probe-status');
+      var sel = $(kind + '_model_select'), input = $(kind + '_model');
+      sel.addEventListener('change', function () {
+        if (sel.value === '__custom__') { input.hidden = false; input.value = ''; input.focus(); }
+        else { input.hidden = true; input.value = sel.value; }
+      });
+      field.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          var listing = btn.dataset.action === 'list', label = btn.textContent;
+          btn.disabled = true; btn.textContent = listing ? '获取中…' : '测试中…';
+          setStatus(status, null, listing ? '正在向服务商获取模型列表…' : '正在发送一条测试请求…');
+          var res = await call(listing ? '/api/providers/models' : '/api/providers/test', probeBody(kind));
+          btn.disabled = false; btn.textContent = label;
+          setStatus(status, res.ok, res.message);
+          if (listing && res.ok) fillSelect(kind, res.models);
+        });
+      });
+    });
+    // A preset switch changes the address, so a fetched list no longer applies.
+    ['llm', 'asr'].forEach(function (kind) {
+      $(kind + '-preset').addEventListener('change', function () {
+        $(kind + '_model_select').hidden = true;
+        $(kind + '_model').hidden = false;
+        setStatus(document.querySelector('.model-field[data-kind="' + kind + '"] .probe-status'), null, '');
+      });
+    });
+
+    function syncSearch() {
+      return $('sp-firecrawl').checked ? 'firecrawl' : 'tavily';
+    }
+    var keyField = { tavily: 'web_search_api_key', firecrawl: 'firecrawl_api_key' };
+    $('search-test').addEventListener('click', async function () {
+      var btn = this, status = btn.parentNode.querySelector('.probe-status'), p = syncSearch();
+      btn.disabled = true; btn.textContent = '搜索中…';
+      setStatus(status, null, '正在用「今日新闻」做一次测试搜索…');
+      var res = await call('/api/providers/test', { kind: 'search', provider: p,
+        api_key: $(keyField[p]).value });
+      btn.disabled = false; btn.textContent = '测试搜索（测试上面选中的服务）';
+      setStatus(status, res.ok, res.message);
+    });
+  })();
+</script>
+<script>
+  (function () {
+    var msg = document.getElementById('voice-msg'), audio = null;
+    document.getElementById('voice-preview').addEventListener('click', async function () {
+      var v = document.getElementById('tts_voice').value, r = document.getElementById('tts_rate').value;
+      if (v === 'native') { msg.textContent = '小爱原声只能在音箱上试听。'; return; }
+      msg.textContent = '正在合成…';
+      var resp = await fetch('/api/tts/preview?voice=' + encodeURIComponent(v) + '&rate=' + r, { credentials: 'same-origin' });
+      if (!resp.ok) { var d = await resp.json().catch(function () { return {}; }); msg.textContent = d.message || '合成失败'; return; }
+      if (audio) audio.pause();
+      audio = new Audio(URL.createObjectURL(await resp.blob())); audio.play(); msg.textContent = '';
+    });
+    document.getElementById('voice-speaker').addEventListener('click', async function () {
+      await fetch('/api/tts/speaker-test', { method: 'POST', credentials: 'same-origin' });
+      msg.textContent = '已发给音箱，20 秒内会说一句。';
+    });
+  })();
+</script>
+<script>
+  // A saved key shows as sk-u••••••••f895; clicking selects it so a paste replaces it.
+  document.querySelectorAll('.key-field').forEach(function (el) {
+    el.addEventListener('focus', function () { if (el.value.indexOf('••') >= 0) el.select(); });
+  });
+</script>
+{% endblock %}

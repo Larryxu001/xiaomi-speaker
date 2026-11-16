@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}扩展工具 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>扩展工具</h1>
+    <p>通过 MCP 给音箱接上更多能力。接上后，说「小爱同学」就能用这些工具。</p>
+  </div>
+  <button type="button" class="btn-primary" id="add-btn" aria-expanded="{{ 'true' if error else 'false' }}" aria-controls="mcp-form">添加 MCP 服务</button>
+</div>
+
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+
+<form class="panel" id="mcp-form" method="post" action="/extensions" {% if not error %}hidden{% endif %}>
+  <div class="panel-head"><h2 id="mcp-form-title">{{ '编辑 MCP 服务' if form.get('server_id') else '添加 MCP 服务' }}</h2></div>
+  <div class="panel-body">
+    <input type="hidden" name="server_id" id="server_id" value="{{ form.get('server_id', '') }}">
+    <div class="row">
+      <div class="field">
+        <label for="mcp-name">名称</label>
+        <input id="mcp-name" type="text" name="name" value="{{ form.get('name', '') }}" placeholder="home-assistant" required maxlength="32" spellcheck="false" autocomplete="off">
+        <p class="hint">小写字母、数字、- 和 _。</p>
+      </div>
+      <div class="field">
+        <label for="mcp-timeout">超时（秒）</label>
+        <input id="mcp-timeout" type="number" name="timeout_s" value="{{ form.get('timeout_s', '10') }}" min="1" max="120">
+      </div>
+    </div>
+    <div class="field">
+      <label for="mcp-url">地址</label>
+      <input id="mcp-url" type="url" inputmode="url" name="url" value="{{ form.get('url', '') }}" placeholder="https://example.com/mcp" required spellcheck="false" autocomplete="off">
+      <p class="hint">支持 Streamable HTTP 和 SSE 两种协议，地址以 /sse 结尾的按 SSE 连接。音箱在你家里，它必须能访问这个地址。</p>
+    </div>
+    <div class="field">
+      <label for="mcp-token">访问令牌（Token）</label>
+      <div class="key-input">
+        <input id="mcp-token" type="password" name="token" placeholder="没有可留空；编辑时留空则保持不变" autocomplete="new-password" spellcheck="false">
+      </div>
+      <p class="hint">会以 Authorization: Bearer 的方式发送。</p>
+    </div>
+    <div class="field">
+      <div class="label-row">
+        <label for="mcp-tools">只开放这些工具</label>
+        <div class="probe-actions">
+          <button type="button" class="btn-ghost" id="probe-btn">测试并获取工具</button>
+        </div>
+      </div>
+      <input id="mcp-tools" type="text" name="tools" value="{{ form.get('tools', '') }}" placeholder="留空表示开放全部工具" spellcheck="false" autocomplete="off">
+      <p class="probe-status" id="probe-status" role="status" aria-live="polite"></p>
+      <div class="tool-picks" id="tool-picks" hidden></div>
+      <p class="hint">工具多了大模型容易选错，只开放需要的几个效果更好。用逗号分隔工具名。</p>
+    </div>
+    <div class="field">
+      <label for="mcp-note">备注</label>
+      <input id="mcp-note" type="text" name="note" value="{{ form.get('note', '') }}" placeholder="例如：家里的智能设备" maxlength="60">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px">
+      <button type="submit" class="btn-primary" data-busy="保存中…">保存</button>
+      <button type="button" class="btn-secondary" id="cancel-btn">取消</button>
+    </div>
+  </div>
+</form>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>控制台 <span class="badge ok">内置</span></h2>
+    <span class="muted" style="font-size:13px">{{ console_tools | length }} 个工具</span>
+  </div>
+  <div class="panel-body">
+    <p class="muted" style="margin:0 0 12px">音箱自动连接，用来通过语音操作这个控制台。比如：「小爱同学，切换到通义」「每个工作日早上七点半播报财经新闻」「把吃药提醒停了」。</p>
+    <details>
+      <summary class="muted" style="cursor:pointer">查看全部工具</summary>
+      <ul class="tool-list" style="margin-top:12px">
+        {% for t in console_tools %}<li><code>{{ t.name }}</code> <span>{{ t.description }}</span></li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+</section>
+
+<h2 class="section-title" id="market">工具市场</h2>
+{% if market_error %}<div class="flash error" role="alert">{{ market_error }}</div>{% endif %}
+<p class="muted" style="margin:-4px 0 12px">挑一个、填上你自己的 Key 就能接上，接好后直接对音箱说话就会用。都在大陆能直连。</p>
+<div class="app-grid">
+  {% for m in market %}
+  <section class="panel app-card">
+    <form class="panel-body" method="post" action="/extensions/market/{{ m.id }}">
+      <div class="app-head">
+        <span class="app-icon" aria-hidden="true">{{ m.icon }}</span>
+        <div><h2>{{ m.name }}</h2>
+          {% if m.id in connected or (m.id == 'bailian' and connected | select('match', 'bailian-') | list) %}<span class="badge ok">已接入</span>{% endif %}</div>
+      </div>
+      <p class="muted">{{ m.desc }}</p>
+      <p class="hint">可以说：{% for s in m.say %}「{{ s }}」{% endfor %}</p>
+      {% if m.server_label %}
+      <div class="field"><label for="srv-{{ m.id }}">{{ m.server_label }}</label><input id="srv-{{ m.id }}" type="text" name="server" placeholder="例如 WebSearch，或粘贴整条接入地址" autocomplete="off" spellcheck="false"></div>
+      {% endif %}
+      <div class="field"><label for="key-{{ m.id }}">{{ m.key_label }}</label><input id="key-{{ m.id }}" type="password" name="key" autocomplete="new-password" required></div>
+      <p class="hint">{{ m.key_help }} <a href="{{ m.key_link }}" target="_blank" rel="noopener">去申请</a></p>
+      <div class="app-actions"><button type="submit" class="btn-primary" data-busy="接入中…">检测并接入</button></div>
+    </form>
+  </section>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">外部 MCP 服务</h2>
+{% if servers %}
+<section class="panel">
+  <ul class="list">
+    {% for srv in servers %}
+    <li>
+      <div style="min-width:0">
+        <div class="text"><strong>{{ srv.name }}</strong>{% if srv.note %} <span class="muted">{{ srv.note }}</span>{% endif %}</div>
+        <div class="server-url">{{ srv.url }}</div>
+        <div class="server-meta">
+          <span class="badge plain">{{ 'SSE' if srv.transport == 'sse' else 'Streamable HTTP' }}</span>
+          {% if srv.private %}<span class="badge plain">家庭局域网</span>{% endif %}
+          {% if srv.token_tail %}<span class="badge plain">Token …{{ srv.token_tail }}</span>{% endif %}
+          <span class="badge plain">{{ '开放 ' ~ (srv.tools.split(',') | length) ~ ' 个工具' if srv.tools else '开放全部工具' }}</span>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:4px; flex:none">
+        <form class="switch" method="post" action="/extensions/{{ srv.id }}/toggle">
+          <button type="submit" aria-pressed="{{ 'true' if srv.enabled else 'false' }}" aria-label="{{ '停用' if srv.enabled else '启用' }} {{ srv.name }}"></button>
+        </form>
+        <button type="button" class="btn-ghost" data-edit='{{ {"server_id": srv.id, "name": srv.name, "url": srv.url, "tools": srv.tools, "timeout_s": srv.timeout_s, "note": srv.note} | tojson }}'>编辑</button>
+        <form class="inline" method="post" action="/extensions/{{ srv.id }}/delete" onsubmit="return confirm('删除 MCP 服务「{{ srv.name }}」？')">
+          <button type="submit" class="btn-ghost danger">删除</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-body" style="text-align:center; padding:36px 24px">
+    <p style="font-weight:600; margin:0 0 4px">还没有接入外部 MCP 服务</p>
+    <p class="muted" style="margin:0 0 16px">例如 Home Assistant 控制家里的设备，或者查快递、查股票的服务。</p>
+    <button type="button" class="btn-secondary" data-open-form>添加第一个</button>
+  </div>
+</section>
+{% endif %}
+
+<script>
+  (function () {
+    function $(id) { return document.getElementById(id); }
+    var form = $('mcp-form'), addBtn = $('add-btn');
+    function open(data) {
+      data = data || {};
+      ['server_id', 'name', 'url', 'tools', 'timeout_s', 'note'].forEach(function (k) {
+        var el = k === 'server_id' ? $('server_id') : $('mcp-' + (k === 'timeout_s' ? 'timeout' : k));
+        if (el) el.value = data[k] !== undefined && data[k] !== null ? data[k] : (k === 'timeout_s' ? 10 : '');
+      });
+      $('mcp-token').value = '';
+      $('mcp-form-title').textContent = data.server_id ? '编辑 MCP 服务' : '添加 MCP 服务';
+      $('probe-status').textContent = ''; $('tool-picks').hidden = true;
+      form.hidden = false; addBtn.setAttribute('aria-expanded', 'true');
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('mcp-name').focus({ preventScroll: true });
+    }
+    function close() { form.hidden = true; addBtn.setAttribute('aria-expanded', 'false'); }
+    addBtn.addEventListener('click', function () { form.hidden ? open() : close(); });
+    $('cancel-btn').addEventListener('click', close);
+    document.querySelectorAll('[data-open-form]').forEach(function (b) { b.addEventListener('click', function () { open(); }); });
+    document.querySelectorAll('[data-edit]').forEach(function (b) {
+      b.addEventListener('click', function () { open(JSON.parse(b.dataset.edit)); });
+    });
+
+    function selectedTools() {
+      return $('mcp-tools').value.split(/[,，\s]+/).filter(Boolean);
+    }
+    function renderPicks(tools) {
+      var box = $('tool-picks'), chosen = selectedTools();
+      box.innerHTML = '';
+      tools.forEach(function (t) {
+        var label = document.createElement('label'), cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = t.name; cb.checked = chosen.length === 0 || chosen.indexOf(t.name) >= 0;
+        label.title = t.description || '';
+        label.appendChild(cb); label.appendChild(document.createTextNode(t.name));
+        box.appendChild(label);
+      });
+      box.hidden = tools.length === 0;
+      box.onchange = function () {
+        var all = box.querySelectorAll('input'), on = box.querySelectorAll('input:checked');
+        $('mcp-tools').value = on.length === all.length ? '' :
+          Array.prototype.map.call(on, function (c) { return c.value; }).join(',');
+      };
+    }
+    $('probe-btn').addEventListener('click', async function () {
+      var btn = this, status = $('probe-status');
+      btn.disabled = true; btn.textContent = '连接中…';
+      status.className = 'probe-status pending'; status.textContent = '正在连接 MCP 服务…';
+      var res;
+      try {
+        var r = await fetch('/api/mcp/probe', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: $('mcp-url').value, token: $('mcp-token').value,
+                                 server_id: $('server_id').value ? Number($('server_id').value) : null }) });
+        res = await r.json();
+      } catch (e) { res = { ok: false, message: '请求控制台失败，请检查网络后重试。' }; }
+      btn.disabled = false; btn.textContent = '测试并获取工具';
+      status.className = 'probe-status ' + (res.ok ? 'ok' : (res.private ? 'pending' : 'error'));
+      status.textContent = res.message;
+      if (res.ok) renderPicks(res.tools);
+    });
+  })();
+</script>
+{% endblock %}

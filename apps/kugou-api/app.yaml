@@ -1,0 +1,9 @@
+name: 酷狗音乐 API
+description: 开源的酷狗音乐接口（MakcRe/KuGouMusicApi）。装好后自动加到「音乐」的音源里，扫码登录你自己的酷狗账号；会员账号能听的歌，音箱都能放。
+icon: 🎶
+category: 音箱能力
+memory_mb: 250
+idle_mb: 90
+disk_gb: 1
+web_port: 18110
+internal: true

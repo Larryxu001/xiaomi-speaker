@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}快捷指令 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>快捷指令</h1>
+    <p>给常做的一串事起个短名字。说「小爱同学，晚安」，音箱就当你说了后面那整句话。</p>
+  </div>
+</div>
+
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+
+<h2 class="section-title">我的快捷指令</h2>
+{% if items %}
+<div class="sc-list">
+  {% for i in items %}
+  <form class="panel sc-card" method="post" action="/shortcuts">
+    <input type="hidden" name="index" value="{{ loop.index0 }}">
+    <div class="sc-say"><span class="sc-label">说</span><input type="text" name="say" value="{{ i.say }}" maxlength="20" aria-label="说什么"></div>
+    <div class="sc-run"><span class="sc-label">音箱会</span><textarea name="run" rows="2" maxlength="300" aria-label="音箱会做什么">{{ i.run }}</textarea></div>
+    <div class="sc-actions">
+      <button type="submit" name="action" value="delete" class="btn-ghost danger" onclick="return confirm('删除「{{ i.say }}」？')">删除</button>
+      <button type="submit" name="action" value="save" class="btn-secondary">保存</button>
+    </div>
+  </form>
+  {% endfor %}
+</div>
+{% else %}
+<section class="panel"><div class="panel-body"><p class="muted" style="margin:0">还没有快捷指令。在下面加一条，或者点一个例子直接填进去。</p></div></section>
+{% endif %}
+
+<form class="panel" method="post" action="/shortcuts" id="sc-new">
+  <div class="panel-head"><h2>新加一条</h2></div>
+  <div class="panel-body">
+    <div class="field"><label for="sc-say">你说</label><input id="sc-say" type="text" name="say" maxlength="20" placeholder="例如：晚安" required></div>
+    <div class="field"><label for="sc-run">音箱就当你说了</label><textarea id="sc-run" name="run" rows="2" maxlength="300" placeholder="例如：关掉空调，把音量调到 30，放点助眠的电台" required></textarea>
+      <p class="hint">用平时跟音箱说话的方式写就行，可以一句话交代好几件事：家电、音量、音乐电台、播报、提醒都可以。</p></div>
+    <p class="hint" style="margin:0 0 8px">例子（点一下填进去）：</p>
+    <div class="chips">
+      {% for say, run in examples %}<button type="button" class="chip" data-say="{{ say }}" data-run="{{ run }}">{{ say }}</button>{% endfor %}
+    </div>
+    <div class="actions" style="margin-top:16px"><button type="submit" name="action" value="save" class="btn-primary">添加</button></div>
+  </div>
+</form>
+
+<h2 class="section-title">音箱自带的指令</h2>
+<section class="panel">
+  <table class="table">
+    <thead><tr><th>你说</th><th>效果</th></tr></thead>
+    <tbody>
+      {% for say, what in built_in %}<tr><td><strong>{{ say }}</strong></td><td class="muted">{{ what }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+  document.querySelectorAll('[data-say]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.getElementById('sc-say').value = b.dataset.say;
+      document.getElementById('sc-run').value = b.dataset.run;
+      document.getElementById('sc-say').focus();
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+services:
+  app:
+    image: binaryify/netease_cloud_music_api:v4.34.0
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18109:3000"
+    environment:
+      TZ: Asia/Shanghai

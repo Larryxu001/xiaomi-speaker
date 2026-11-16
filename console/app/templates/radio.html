@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}电台 · 小米音箱控制台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>电台</h1>
+    <p>点「播放」音箱马上开始放。也可以说「打开中国之声」「放点爵士电台」「收藏这个台」「放我收藏的电台」「换一台」。</p>
+  </div>
+  <button type="button" class="btn-secondary" id="radio-stop">停止播放</button>
+</div>
+
+{% if not online %}<div class="flash" role="status">音箱现在好像不在线；点播放后，它连上时会立刻执行。</div>{% endif %}
+
+<div class="radio-bar">
+  <div class="chips" role="tablist" aria-label="电台分类">
+    <button type="button" class="chip on" data-cat="recommend" role="tab">为你推荐</button>
+    <button type="button" class="chip" data-cat="favorites" role="tab">我的收藏</button>
+    <button type="button" class="chip" data-cat="recent" role="tab">最近收听</button>
+    <button type="button" class="chip" data-cat="china" role="tab">国内精选</button>
+    {% for m in moods %}<button type="button" class="chip" data-cat="{{ m }}" role="tab">{{ m }}</button>{% endfor %}
+  </div>
+  <form class="radio-search" id="radio-search">
+    <input type="search" id="radio-q" placeholder="搜电台名，例如：音乐之声、BBC、FM" aria-label="搜索电台">
+    <button type="submit" class="btn-secondary">搜索</button>
+  </form>
+</div>
+
+<section class="panel">
+  <ul class="list radio-list" id="radio-list" aria-live="polite"><li class="empty">正在加载…</li></ul>
+</section>
+<p class="hint" id="radio-msg" role="status"></p>
+
+<script>
+  (function () {
+    var list = document.getElementById('radio-list'), msg = document.getElementById('radio-msg'), cat = 'recommend';
+    function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    async function load(c, q) {
+      cat = c;
+      var url = '/api/radio/browse?cat=' + encodeURIComponent(c) + (q ? '&q=' + encodeURIComponent(q) : '');
+      // Show what this tab showed last time at once, then refresh quietly.
+      var saved = null;
+      try { saved = JSON.parse(sessionStorage.getItem('radio:' + url) || 'null'); } catch (e) {}
+      if (saved) render(c, saved); else list.innerHTML = '<li class="empty">正在加载…</li>';
+      var d;
+      try { d = await (await fetch(url, { credentials: 'same-origin' })).json(); }
+      catch (e) { if (!saved) list.innerHTML = '<li class="empty">网络出错了，再点一次试试。</li>'; return; }
+      if (cat !== c) return;  // the user already moved to another tab
+      if (d.ok) { try { sessionStorage.setItem('radio:' + url, JSON.stringify(d)); } catch (e) {} }
+      render(c, d);
+    }
+    function render(c, d) {
+      if (!d.ok) { list.innerHTML = '<li class="empty">' + esc(d.message || '加载失败') + '</li>'; return; }
+      if (!d.stations.length) {
+        list.innerHTML = '<li class="empty">' + (c === 'favorites' ? '还没有收藏。听到喜欢的台，点星号或说「收藏这个台」。' : c === 'recent' ? '还没有收听记录。' : '没找到电台。') + '</li>';
+        return;
+      }
+      list.innerHTML = d.stations.map(function (s) {
+        return '<li data-id="' + esc(s.id) + '"><div class="text"><strong>' + esc(s.name) + '</strong>' +
+          (s.tags ? '<div class="when">' + esc(s.tags) + '</div>' : '') + '</div>' +
+          '<div class="row-actions"><button type="button" class="btn-ghost star' + (s.fav ? ' on' : '') + '" data-fav="' + (s.fav ? 1 : 0) + '" aria-label="收藏">' + (s.fav ? '★' : '☆') + '</button>' +
+          '<button type="button" class="btn-primary play">播放</button></div></li>';
+      }).join('');
+    }
+    list.addEventListener('click', async function (e) {
+      var li = e.target.closest('li[data-id]');
+      if (!li) return;
+      if (e.target.classList.contains('play')) {
+        var d = await (await fetch('/api/radio/play', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: li.dataset.id }) })).json();
+        msg.textContent = (li.querySelector('strong').textContent) + '：' + (d.message || '');
+      }
+      if (e.target.classList.contains('star')) {
+        var on = e.target.dataset.fav !== '1';
+        await fetch('/api/radio/fav', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: li.dataset.id, on: on }) });
+        e.target.dataset.fav = on ? 1 : 0; e.target.textContent = on ? '★' : '☆'; e.target.classList.toggle('on', on);
+        if (!on && cat === 'favorites') li.remove();
+      }
+    });
+    document.querySelectorAll('[data-cat]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('[data-cat]').forEach(function (x) { x.classList.toggle('on', x === b); });
+        load(b.dataset.cat);
+      });
+    });
+    document.getElementById('radio-search').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var q = document.getElementById('radio-q').value.trim();
+      if (q) { document.querySelectorAll('[data-cat]').forEach(function (x) { x.classList.remove('on'); }); load('search', q); }
+    });
+    document.getElementById('radio-stop').addEventListener('click', async function () {
+      await fetch('/api/radio/stop', { method: 'POST', credentials: 'same-origin' });
+      msg.textContent = '已让音箱停止播放。';
+    });
+    load('recommend');
+  })();
+</script>
+{% endblock %}

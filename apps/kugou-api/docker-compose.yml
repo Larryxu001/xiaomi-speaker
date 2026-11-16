@@ -1,0 +1,10 @@
+# Image built on the server from source: see build/build.sh (no published image).
+services:
+  app:
+    image: xiaomi-speaker/kugou-api:443d4a41
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18110:3000"
+    environment:
+      TZ: Asia/Shanghai

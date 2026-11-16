@@ -1,0 +1,9 @@
+services:
+  app:
+    image: neosmemo/memos:26.11.0
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18107:5230"
+    volumes:
+      - ${APP_DATA}/data:/var/opt/memos

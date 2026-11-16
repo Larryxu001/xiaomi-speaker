@@ -1,0 +1,14 @@
+services:
+  app:
+    image: deluan/navidrome:0.64.2
+    restart: unless-stopped
+    mem_limit: ${APP_MEMORY}
+    ports:
+      - "127.0.0.1:18101:4533"
+    environment:
+      ND_LOGLEVEL: info
+      ND_DEFAULTLANGUAGE: zh-Hans
+      ND_BASEURL: /apps/navidrome
+    volumes:
+      - ${APP_DATA}/data:/data
+      - ${APP_DATA}/music:/music:ro

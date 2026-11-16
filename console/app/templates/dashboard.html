@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}概览 · 小米音箱控制台{% endblock %}
+{% block content %}
+<section class="panel" aria-label="音箱状态">
+  <div class="device">
+    <div class="device-icon" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="3"/><circle cx="12" cy="14" r="3"/><path d="M12 7h.01"/></svg>
+      <span class="pulse {{ 'on' if online }}"></span>
+    </div>
+    <div>
+      <h2>小米音箱 Pro</h2>
+      <div class="sub">
+        {% if online %}
+          <span class="badge ok">在线</span>
+          <span>{{ status.last_seen_at | fmt_ago }}同步</span>
+        {% elif status and status.last_seen_at %}
+          <span class="badge warn">离线</span>
+          <span>最后一次同步在 {{ status.last_seen_at | fmt_ago }}，请检查音箱电源和网络。</span>
+        {% else %}
+          <span class="badge off">未连接</span>
+          <span>还没收到过音箱的同步。</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <dl class="facts">
+    <div><dt>AI 语音服务</dt><dd>{% if agent_running %}运行中{% elif status and status.last_report %}已停止{% else %}未知{% endif %}</dd></div>
+    <div><dt>对话模型</dt><dd title="{{ s.llm_model }}">{{ s.llm_model or '未设置' }}</dd></div>
+    <div><dt>语音识别</dt><dd title="{{ s.asr_model }}">{{ (s.asr_model or '未设置').split('/')[-1] }}</dd></div>
+    <div><dt>定时任务</dt><dd><a href="/tasks">{{ task_count }} 个启用中</a></dd></div>
+  </dl>
+</section>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head">
+    <h2>运行日志</h2>
+    <span class="muted" style="font-size:13px">音箱最近的活动，新的在上面</span>
+  </div>
+  {% if log_events %}
+  <ul class="list log-events">
+    {% for e in log_events %}
+    <li class="{{ e.level }}"><span class="when">{{ e.time }}</span><span class="text">{{ e.text }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">还没有收到音箱的活动记录。音箱更新到新版本后，这里会显示它的运行日志。</p>
+  {% endif %}
+</section>
+{% endblock %}
