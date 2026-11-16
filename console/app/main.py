@@ -41,7 +41,7 @@ from .log_view import parse_log
 from .mcp_probe import list_remote_tools
 from .mcp_server import DeviceTokenAuth, build_mcp_app, mcp
 from .scheduler import queue_task_now, run_scheduler_forever
-from . import commands, memory, music, radio, services, sources, tts, wake
+from . import commands, memory, music, radio, services, sources, tts, wake, weather
 from .services import ServiceError, seed_profile_from_current
 
 logging.basicConfig(level=logging.INFO)
@@ -1571,6 +1571,17 @@ async def device_status(request: Request, token: str = Query(""), x_device_token
     except Exception as exc:  # never fail the speaker's report over statistics
         log.warning("speed ingest failed: %s", exc)
     return PlainTextResponse("ok")
+
+
+@app.get("/api/device/weather")
+async def device_weather(location: str = "", lat: float | None = None, lon: float | None = None,
+                         x_device_token: str | None = Header(None)):
+    if not _check_device_token("", x_device_token):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        return JSONResponse(await weather.lookup(location, lat, lon))
+    except weather.WeatherError as exc:
+        return JSONResponse({"error": str(exc)})
 
 
 @app.get("/healthz", response_class=PlainTextResponse)

@@ -30,10 +30,10 @@ impl WeatherService {
 
     async fn get_weather_inner(&self, requested_location: &str) -> anyhow::Result<Value> {
         let settings = &self.config.agent.weather;
-        anyhow::ensure!(
-            !settings.qweather_url.trim().is_empty(),
-            "agent.weather.qweather_url is empty"
-        );
+        if settings.qweather_url.trim().is_empty() {
+            // No QWeather key: the console looks it up (free sources, cached).
+            return self.console_weather(requested_location).await;
+        }
 
         let (location, label) = if requested_location.is_empty() {
             self.auto_ip_location(settings).await.unwrap_or_else(|err| {
@@ -62,6 +62,51 @@ impl WeatherService {
         replace_query_pairs(&mut url, &[("location", &location)]);
         let data = self.fetch_json(url, settings).await?;
         Ok(summarize_daily_weather(&data, &label))
+    }
+
+    async fn console_weather(&self, requested_location: &str) -> anyhow::Result<Value> {
+        let console = &self.config.music.console;
+        anyhow::ensure!(!console.base_url.trim().is_empty(), "weather needs the console or a QWeather key");
+        let location = if requested_location.is_empty() {
+            let default = self.config.agent.weather.default_location.trim();
+            if default.is_empty() { self.home_city().await? } else { default.to_string() }
+        } else {
+            requested_location.to_string()
+        };
+        let mut url = Url::parse(console.base_url.trim_end_matches('/'))?;
+        url.set_path("/api/device/weather");
+        url.query_pairs_mut().append_pair("location", &location);
+        let resp = self
+            .client
+            .get(url)
+            .header("X-Device-Token", &console.token)
+            .timeout(std::time::Duration::from_secs(12))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(resp.json().await?)
+    }
+
+    /// The city this speaker is in, from its public IP (kept for a day).
+    async fn home_city(&self) -> anyhow::Result<String> {
+        static HOME: std::sync::Mutex<Option<(std::time::Instant, String)>> = std::sync::Mutex::new(None);
+        if let Some((at, city)) = HOME.lock().unwrap().clone() {
+            if at.elapsed() < std::time::Duration::from_secs(24 * 3600) {
+                return Ok(city);
+            }
+        }
+        let data: Value = self
+            .client
+            .get("http://ip-api.com/json/?lang=zh-CN&fields=status,city")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?
+            .json()
+            .await?;
+        let city = data.get("city").and_then(Value::as_str).unwrap_or_default().trim().to_string();
+        anyhow::ensure!(!city.is_empty(), "could not tell which city this is; say the city name");
+        *HOME.lock().unwrap() = Some((std::time::Instant::now(), city.clone()));
+        Ok(city)
     }
 
     async fn auto_ip_location(&self, settings: &WeatherConfig) -> anyhow::Result<(String, String)> {
