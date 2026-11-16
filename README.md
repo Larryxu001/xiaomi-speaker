@@ -147,4 +147,4 @@ chmod +x /data/init.sh
 
 ## 许可证和来源
 
-本项目以 [LGPL-3.0](LICENSE) 发布。本项目修改自开源项目 xiaoai-agent，并在其基础上做了大量改写和扩展；刷机补丁相关材料的来源与许可证见 [upstream-open-xiaoai/](upstream-open-xiaoai/)。
+本项目以 [LGPL-3.0](LICENSE) 发布。
