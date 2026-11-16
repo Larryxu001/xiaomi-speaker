@@ -587,6 +587,11 @@ async fn run_session(
                 let _ = state.device.speak(&said).await;
             }
             exchanged = true;
+            if !state.config.runtime.follow_up {
+                speech.finish_dialog(turn_id).await?;
+                state.agent.reset_session("fast command").await;
+                return Ok(());
+            }
             // Music comes back (quietly) and the mic stays open for the
             // usual follow-up window: "下一曲" again needs no wake word.
             state.music.restore_after_interruption().await;
@@ -680,6 +685,16 @@ async fn run_session(
         // over music mostly hears the music (commands were missed, and the
         // next wake word could find the microphone busy); the wake word is
         // the reliable way in, and it pauses the music first.
+        // One command per wake word: the answer ends the conversation (what
+        // was said is still remembered for the next wake). The wake word
+        // also interrupts a long answer.
+        if !state.config.runtime.follow_up {
+            current.finish().await;
+            info!("回答完毕，本轮对话结束");
+            speech.finish_dialog(turn_id).await?;
+            state.agent.reset_session("session idle timeout").await;
+            return Ok(());
+        }
         // Music that this turn started (or changed) plays on quietly while
         // the mic stays open for the follow-up window. Music that was only
         // paused for the conversation stays paused until the conversation

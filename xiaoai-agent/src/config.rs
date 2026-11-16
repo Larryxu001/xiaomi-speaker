@@ -59,6 +59,11 @@ pub struct RuntimeConfig {
     pub session_idle_timeout_s: f64,
     /// Keep listening while the reply is spoken; talking over it stops it.
     pub barge_in: bool,
+    /// Keep the mic open after an answer for a follow-up without the wake
+    /// word. Off by default: every command starts with the wake word, which
+    /// is what the microphone hears most reliably.
+    #[serde(default)]
+    pub follow_up: bool,
     /// While speaking, user speech must be this many times above the normal
     /// voice threshold, so the speaker's own echo doesn't interrupt itself.
     pub barge_in_boost: f64,
@@ -70,6 +75,7 @@ impl Default for RuntimeConfig {
             speech_socket: "/tmp/mico_aivs_lab/usock/speech.usock".to_string(),
             session_idle_timeout_s: 20.0,
             barge_in: true,
+            follow_up: false,
             barge_in_boost: 3.0,
         }
     }
