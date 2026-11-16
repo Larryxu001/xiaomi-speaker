@@ -56,7 +56,8 @@
       }
       list.innerHTML = d.stations.map(function (s) {
         return '<li data-id="' + esc(s.id) + '"><div class="text"><strong>' + esc(s.name) + '</strong>' +
-          (s.tags ? '<div class="when">' + esc(s.tags) + '</div>' : '') + '</div>' +
+          ((s.tags || s.bitrate) ? '<div class="when">' + esc([s.tags, s.overseas ? '海外' : '', s.bitrate ? s.bitrate + ' kbps' : ''].filter(Boolean).join(' · ')) +
+            (s.note ? ' <span class="badge warn">' + esc(s.note) + '</span>' : '') + '</div>' : '') + '</div>' +
           '<div class="row-actions"><button type="button" class="btn-ghost star' + (s.fav ? ' on' : '') + '" data-fav="' + (s.fav ? 1 : 0) + '" aria-label="收藏">' + (s.fav ? '★' : '☆') + '</button>' +
           '<button type="button" class="btn-primary play">播放</button></div></li>';
       }).join('');

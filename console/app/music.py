@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import random
 import secrets
 import time
@@ -218,6 +219,33 @@ def _path(data, path: str):
         else:
             return None
     return cur
+
+
+def _station(src: dict, st: dict, album: str) -> dict:
+    """A radio-browser station, remembering its bitrate and country (overseas
+    high-bitrate streams stutter over the server's cross-border link)."""
+    song = _song(src, st["stationuuid"], st["name"].strip(), ["网络电台"], album, None,
+                 st.get("url_resolved") or st.get("url"))
+    _cache[song["id"]]["_br"] = int(st.get("bitrate") or 0)
+    _cache[song["id"]]["_cc"] = (st.get("countrycode") or "").upper()
+    return song
+
+
+def _prefer_light(stations: list[dict]) -> list[dict]:
+    """One entry per station name; for overseas stations keep the lowest
+    usable bitrate variant (most stations publish several)."""
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for st in stations:
+        key = re.sub(r"[\s\-_|()（）\[\]]+|\b\d{2,3}\s*k(bps)?\b|hd|hq|aac\+?|mp3", "", st["name"].lower())
+        if key not in best:
+            best[key] = st
+            order.append(key)
+            continue
+        cur, new = _cache.get(best[key]["id"], {}), _cache.get(st["id"], {})
+        if new.get("_cc") != "CN" and 48 <= (new.get("_br") or 999) < (cur.get("_br") or 999):
+            best[key] = st
+    return [best[k] for k in order]
 
 
 def _song(src: dict, item_id, name, artists, album="", duration_ms=None, url=None) -> dict:
@@ -644,24 +672,25 @@ async def _search_one(client, src: dict, q: str, limit: int) -> list[dict]:
                     if st["stationuuid"] in seen or st.get("codec", "").upper() not in ("MP3", "AAC", "AAC+", ""):
                         continue
                     seen.add(st["stationuuid"])
-                    out.append(_song(src, st["stationuuid"], st["name"].strip(), ["网络电台"], tag, None,
-                                     st.get("url_resolved") or st.get("url")))
+                    out.append(_station(src, st, tag))
             random.shuffle(out)  # a different station each time you ask for jazz
+            out = _prefer_light(out)
             from . import radio
             out = radio.rank(out)  # but stations you like first, ones you skip last
         elif not out:
             name = q
             for w in ("网络电台", "电台", "广播", "收音机", "收听", "播放", "打开", "换一台"):
                 name = name.replace(w, "")
-            params = {"limit": limit, "hidebroken": "true", "order": "clickcount", "reverse": "true"}
+            params = {"limit": max(limit * 2, 10), "hidebroken": "true", "order": "clickcount", "reverse": "true"}
             if name.strip():
                 params["name"] = name.strip()
             else:
                 out = [_song(src, f"c{i}", n, ["精选电台"], t.split()[0], None, u) for i, (n, u, t) in enumerate(CURATED)]
             if name.strip():
                 data = await _json(client, f"{RADIO_API}/json/stations/search?{urlencode(params)}")
-                out = [_song(src, st["stationuuid"], st["name"].strip(), ["网络电台"], st.get("country", ""), None,
-                             st.get("url_resolved") or st.get("url")) for st in data]
+                out = _prefer_light([_station(src, st, st.get("country", "")) for st in data])
+                from . import radio
+                out = radio.rank(out)
         return out[:limit]
     # custom
     url = cfg["search"].replace("{q}", quote(q)).replace("{limit}", str(limit))
@@ -822,7 +851,12 @@ def song(song_id: str) -> dict:
             _song(src, item_id, name, ["精选电台"], tags.split()[0], None, url)
     item = _cache.get(song_id)
     if item:
-        return {k: v for k, v in item.items() if not k.startswith("_")}
+        out = {k: v for k, v in item.items() if not k.startswith("_")}
+        if item.get("_br"):
+            out["bitrate"] = item["_br"]
+        if item.get("_cc"):
+            out["overseas"] = item["_cc"] != "CN"
+        return out
     return {"id": song_id, "name": song_id.split(":", 1)[-1], "artists": [], "album": "", "duration_ms": None}
 
 

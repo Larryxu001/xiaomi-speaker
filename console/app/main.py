@@ -1142,7 +1142,8 @@ async def radio_browse(request: Request, cat: str = "recommend", q: str = ""):
     except music.MusicError as exc:
         return JSONResponse({"ok": False, "message": str(exc)})
     return JSONResponse({"ok": True, "stations": [
-        {"id": s["id"], "name": s["name"], "tags": s.get("album") or "", "fav": s["id"] in favs} for s in stations]})
+        {"id": s["id"], "name": s["name"], "tags": s.get("album") or "", "fav": s["id"] in favs,
+         **radio.station_view(s)} for s in stations]})
 
 
 @app.post("/api/radio/play")
