@@ -168,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
                         // Music pauses for the conversation; any reply still being
                         // spoken stops (it no longer takes the music with it).
                         music.interrupt_for_wake().await;
+                        music.end_listening_duck().await; // an interrupted session can't restore it
                         airplay.interrupt_for_wake().await;
                         device.abort_current_output().await;
                         cleanup_turn_leds(&device, &config.device).await;
@@ -275,6 +276,7 @@ async fn run_turn(
         state.agent.reset_session("turn failed").await;
     }
     cleanup_turn_leds(&state.device, &state.config.device).await;
+    state.music.end_listening_duck().await;
     state.music.restore_after_interruption().await;
     state.airplay.restore_after_interruption().await;
     result
@@ -297,10 +299,18 @@ async fn run_session(
     let mut exchanged = false;
     // Set while a reply is frozen because the user may be talking over it.
     let held = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // After a music command the music plays quietly and the mic stays open
+    // until this moment; then the conversation ends and the volume returns.
+    let mut music_window: Option<std::time::Instant> = None;
+    let session_idle = idle_timeout;
 
     loop {
         let turn_id = turn.id();
         active_turn_id.store(turn_id, Ordering::Relaxed);
+        let idle_timeout = match music_window {
+            Some(until) => until.saturating_duration_since(std::time::Instant::now()).max(Duration::from_secs(1)),
+            None => session_idle,
+        };
         state.device.show_led(led.led_listening).await;
         let device_for_speech = state.device.clone();
         let maybe_stream = match state
@@ -493,6 +503,12 @@ async fn run_session(
                 state.agent.reset_session("empty ASR result").await;
                 return Ok(());
             }
+            if music_window.is_some_and(|until| std::time::Instant::now() >= until) {
+                info!("音乐在放，这段时间没有新指令，对话结束");
+                speech.finish_dialog(turn_id).await?;
+                state.agent.reset_session("session idle timeout").await;
+                return Ok(());
+            }
             // Mid-conversation noise: keep listening instead of hanging up.
             info!("这一段没识别出话（多半是环境声），继续听");
             speech.continue_dialog(turn_id).await?;
@@ -526,6 +542,9 @@ async fn run_session(
         }
         let asr_secs = heard_at.elapsed().as_secs_f64();
         info!("听到：{command}");
+        // A real command: full volume again while it is handled.
+        music_window = None;
+        state.music.end_listening_duck().await;
         let expanded;
         let command = match shortcut_for(&state.config.agent.shortcuts, command) {
             Some(sc) => {
@@ -567,9 +586,18 @@ async fn run_session(
             if !said.is_empty() {
                 let _ = state.device.speak(&said).await;
             }
-            speech.finish_dialog(turn_id).await?;
-            state.agent.reset_session("fast command").await;
-            return Ok(());
+            exchanged = true;
+            // Music comes back (quietly) and the mic stays open for the
+            // usual follow-up window: "下一曲" again needs no wake word.
+            state.music.restore_after_interruption().await;
+            match open_followup(&state, &speech, turn_id, &mut followup_rx, session_idle).await? {
+                Some((next, window)) => {
+                    music_window = window;
+                    turn = next;
+                    continue;
+                }
+                None => return Ok(()),
+            }
         }
         if let Some(stop_music) = exit_intent(command) {
             if let Some(previous) = playback.take() {
@@ -652,11 +680,20 @@ async fn run_session(
         // over music mostly hears the music (commands were missed, and the
         // next wake word could find the microphone busy); the wake word is
         // the reliable way in, and it pauses the music first.
-        if state.music.is_active().await && !reply.should_end {
+        // Music that this turn started (or changed) plays on quietly while
+        // the mic stays open for the follow-up window. Music that was only
+        // paused for the conversation stays paused until the conversation
+        // ends, so follow-ups are heard in silence.
+        if state.music.is_sounding().await && !reply.should_end {
             current.finish().await;
-            info!("音乐在放，本轮对话结束（要下指令直接喊小爱同学）");
-            speech.finish_dialog(turn_id).await?;
-            return Ok(());
+            match open_followup(&state, &speech, turn_id, &mut followup_rx, session_idle).await? {
+                Some((next, window)) => {
+                    music_window = window;
+                    turn = next;
+                    continue;
+                }
+                None => return Ok(()),
+            }
         }
         let barge_in = state.config.runtime.barge_in && !reply.should_end && !reply.text.trim().is_empty();
         if barge_in {
@@ -705,6 +742,38 @@ async fn run_session(
                 return Ok(());
             }
         };
+    }
+}
+
+/// Opens the mic for the next sentence without a wake word. With music
+/// sounding it is turned down first and the window gets a hard end (the
+/// music itself can keep triggering the mic). None: nobody spoke, the dialog
+/// was finished.
+async fn open_followup(
+    state: &TurnState,
+    speech: &SpeechHandle,
+    turn_id: u64,
+    followup_rx: &mut mpsc::Receiver<SpeechTurn>,
+    window: Duration,
+) -> anyhow::Result<Option<(SpeechTurn, Option<std::time::Instant>)>> {
+    let led = &state.config.device;
+    let over_music = state.music.is_sounding().await;
+    if over_music {
+        state.music.duck_for_listening().await;
+    }
+    let until = over_music.then(|| std::time::Instant::now() + window);
+    speech.continue_dialog(turn_id).await?;
+    request_followup_capture().await?;
+    state.device.shut_led(led.led_speaking).await;
+    state.device.show_led(led.led_listening).await;
+    match timeout(window, followup_rx.recv()).await {
+        Ok(Some(next)) => Ok(Some((next, until))),
+        _ => {
+            info!("等待下一句超时，对话收尾");
+            speech.finish_dialog(turn_id).await?;
+            state.agent.reset_session("session idle timeout").await;
+            Ok(None)
+        }
     }
 }
 

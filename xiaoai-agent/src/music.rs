@@ -58,6 +58,8 @@ pub struct MusicService {
     last_note: Mutex<Option<String>>,
     /// Native content just started in this turn: the reply stays silent.
     native_started: std::sync::atomic::AtomicBool,
+    /// Music is turned down while the mic stays open after a command.
+    listening_duck: std::sync::atomic::AtomicBool,
 }
 
 impl MusicService {
@@ -70,6 +72,7 @@ impl MusicService {
             netease_cookie: Mutex::new(None),
             last_note: Mutex::new(None),
             native_started: std::sync::atomic::AtomicBool::new(false),
+            listening_duck: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -837,6 +840,32 @@ impl MusicService {
             if ok {
                 last = key;
                 sent_at = std::time::Instant::now();
+            }
+        }
+    }
+
+    /// Our own music is audible right now (not paused, not held for the
+    /// conversation, not native content).
+    pub async fn is_sounding(&self) -> bool {
+        let state = self.state.lock().await;
+        state.current.as_ref().is_some_and(|i| !i.song.id.starts_with("native:"))
+            && !state.paused
+            && state.interruption.is_none()
+    }
+
+    /// Turns the music down so the open mic can hear a follow-up command.
+    pub async fn duck_for_listening(&self) {
+        if !self.listening_duck.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            if let Err(err) = self.device.duck_audio().await {
+                warn!("压低音乐音量失败：{err:?}");
+            }
+        }
+    }
+
+    pub async fn end_listening_duck(&self) {
+        if self.listening_duck.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            if let Err(err) = self.device.unduck_audio().await {
+                warn!("恢复音乐音量失败：{err:?}");
             }
         }
     }
