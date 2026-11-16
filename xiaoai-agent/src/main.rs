@@ -152,6 +152,7 @@ async fn main() -> anyhow::Result<()> {
     let device = Device::new(config.device.clone());
     let asr = AsrClient::new(config.asr.clone())?;
     let music = Arc::new(MusicService::new(config.clone(), device.clone())?);
+    music.clear_leftover_native().await;
     tokio::spawn(music.clone().watch_track_end());
     tokio::spawn(music.clone().run_console_commands());
     tokio::spawn(music.clone().report_now_playing());
@@ -648,7 +649,9 @@ async fn run_session(
                 previous.playing.store(false, Ordering::Relaxed);
                 state.device.abort_current_output().await;
             }
-            if stop_music && state.music.is_active().await {
+            if stop_music {
+                // Always: the sound may be a story, an alarm or a briefing
+                // that we did not start (see MusicService::stop).
                 state.music.stop().await;
             }
             info!("用户要结束，对话结束");
@@ -1087,7 +1090,7 @@ async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
         return format!("{notes}快速指令 {fast:?} → {said}（执行 {:.1} 秒）", started.elapsed().as_secs_f64());
     }
     if let Some(stop_music) = exit_intent(command) {
-        if stop_music && state.music.is_active().await {
+        if stop_music {
             state.music.stop().await;
         }
         return format!("{notes}结束对话（停止音乐：{stop_music}）");

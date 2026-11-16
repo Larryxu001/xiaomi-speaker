@@ -99,6 +99,16 @@ CREATE TABLE IF NOT EXISTS announcements (
     delivered_at TEXT
 );
 
+-- A scheduled briefing that could not be made (source broken, nothing to
+-- say). It is never spoken; the console shows it instead.
+CREATE TABLE IF NOT EXISTS task_problems (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER,
+    task_name TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS model_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,       -- what you call it by voice, e.g. "DeepSeek"

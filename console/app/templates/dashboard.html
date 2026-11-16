@@ -31,6 +31,20 @@
   </dl>
 </section>
 
+{% if problems %}
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head">
+    <h2>跳过的播报</h2>
+    <span class="muted" style="font-size:13px"><a href="/tasks">去定时任务页看全部</a></span>
+  </div>
+  <ul class="list">
+    {% for p in problems %}
+    <li class="panel-body"><span class="badge warn">跳过</span> {{ p.task_name }}　<span class="muted">{{ p.created_at[5:16].replace('T', ' ') }}　{{ p.reason }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="panel" style="margin-top:20px">
   <div class="panel-head">
     <h2>响应速度</h2>

@@ -1,6 +1,19 @@
 {% extends "base.html" %}
 {% block title %}定时任务 · 小米音箱控制台{% endblock %}
 {% block content %}
+{% if problems %}
+<section class="panel" style="margin-bottom:20px">
+  <div class="panel-head">
+    <h2>跳过的播报</h2>
+    <span class="muted" style="font-size:13px">取不到内容或内容没法念时，音箱不会播，原因记在这里</span>
+  </div>
+  <ul class="list">
+    {% for p in problems %}
+    <li class="panel-body"><span class="badge warn">跳过</span> {{ p.task_name }}　<span class="muted">{{ p.created_at[5:16].replace('T', ' ') }}　{{ p.reason }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <div class="page-head">
   <div>
     <h1>定时任务</h1>

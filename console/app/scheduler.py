@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
-from .db import get_conn, get_settings, local_tz
+from .db import get_conn, get_settings, local_tz, now_local
 from .providers import ProviderError, _anthropic_root, web_search
 from .sources import gather_material, ids_from_text
 
@@ -126,7 +126,38 @@ async def _llm_complete(settings: dict[str, str], system: str, user: str, max_to
         return data["choices"][0]["message"]["content"]
 
 
-async def _run_news_analysis(task: dict, settings: dict[str, str]) -> str:
+# Phrases a model falls back on when the material was unusable. Such a
+# section is dropped rather than read out at six in the morning.
+_APOLOGY = ("无法播报", "无法还原", "不具备播报价值", "没有内容", "暂无内容", "内容为空",
+            "原始数据出现了问题", "乱码", "程序代码", "无法完整播报", "请核对", "建议核对",
+            "未提供", "没有提供", "资料不足", "无法生成")
+
+
+def note_problem(task: dict, reason: str) -> None:
+    """Recorded for the console; never spoken."""
+    log.warning("task %s skipped: %s", task.get("id"), reason)
+    with get_conn() as conn:
+        conn.execute("INSERT INTO task_problems (task_id, task_name, reason, created_at) VALUES (?, ?, ?, ?)",
+                     (task.get("id"), task.get("name") or "", reason[:300],
+                      now_local().isoformat(timespec="seconds")))
+        conn.execute("DELETE FROM task_problems WHERE id NOT IN "
+                     "(SELECT id FROM task_problems ORDER BY id DESC LIMIT 100)")
+        conn.commit()
+
+
+def _unusable(text: str) -> str:
+    """Why this spoken text should not be played, or '' when it is fine."""
+    body = " ".join((text or "").split())
+    if len(body) < 40:
+        return "生成出来的稿子太短"
+    hits = [w for w in _APOLOGY if w in body]
+    # An apology only counts when it is most of what the section says.
+    if hits and (len(body) < 320 or body.count("第") < 3):
+        return f"稿子里只有「{hits[0]}」这类说明，没有真正的内容"
+    return ""
+
+
+async def _run_news_analysis(task: dict, settings: dict[str, str]) -> str | None:
     topic = task["payload"] or "今天的重要新闻"
     source_ids = ids_from_text(task.get("source_ids"))
     if source_ids:
@@ -146,14 +177,23 @@ async def _run_news_analysis(task: dict, settings: dict[str, str]) -> str:
     if profile:
         user_parts.append(f"\n用户的背景和偏好（供你调整语气和关注点，不要逐字读出）：{profile}")
     try:
-        text = await _llm_complete(settings, system, "\n".join(user_parts))
-        return text.strip()
+        text = (await _llm_complete(settings, system, "\n".join(user_parts))).strip()
     except Exception as exc:  # pragma: no cover
         log.error("news analysis generation failed: %s", exc)
-        return f"{topic}的播报生成失败，请稍后在控制台查看详情。"
+        note_problem(task, f"生成播报时出错（{exc.__class__.__name__}）")
+        return None
+    bad = _unusable(text)
+    if bad:
+        note_problem(task, bad)
+        return None
+    return text
 
 
 # Spoken Chinese runs ~250 characters a minute.
+class SectionFailed(str):
+    """A briefing section that must not be spoken; carries the reason."""
+
+
 LENGTHS = {
     "short": ("简短", "1 分钟左右，约 250 字，挑最重要的 3 到 4 条", 700),
     "standard": ("标准", "3 分钟左右，约 750 字，挑最重要的 6 到 8 条", 1600),
@@ -162,14 +202,14 @@ LENGTHS = {
 }
 
 
-async def _full_section(src: dict, settings: dict[str, str], topic: str, first: bool, last: bool) -> str:
+async def _full_section(src: dict, settings: dict[str, str], topic: str, first: bool, last: bool) -> str | None:
     """One source of the 「完整」 briefing: its top 10, in its own order,
     each told in full (what happened + background), nothing merged or cut."""
     from .sources import SourceError, full_items
     try:
         items = await full_items(src, settings, 10)
     except SourceError as exc:
-        return f"{src['name']}这次没取到：{exc}"
+        return SectionFailed(f"{src['name']}：{exc}")
     now = datetime.now(local_tz(settings))
     greeting = ("早上好" if now.hour < 11 else "中午好" if now.hour < 13 else "下午好" if now.hour < 18 else "晚上好")
     lines = []
@@ -188,30 +228,41 @@ async def _full_section(src: dict, settings: dict[str, str], topic: str, first: 
     )
     user = f"用户的要求：{topic}\n\n{src['name']}的前 {len(items)} 条：\n" + "\n".join(lines)
     try:
-        return (await _llm_complete(settings, system, user, max_tokens=2600)).strip()
+        text = (await _llm_complete(settings, system, user, max_tokens=2600)).strip()
     except Exception as exc:  # pragma: no cover
         log.error("full briefing section failed: %s", exc)
-        return f"{src['name']}这一段生成失败了。"
+        return SectionFailed(f"{src['name']}：生成播报时出错（{exc.__class__.__name__}）")
+    bad = _unusable(text)
+    return SectionFailed(f"{src['name']}：{bad}") if bad else text
 
 
 async def _run_full_briefing(task: dict, settings: dict[str, str], topic: str, source_ids: list[int]) -> list[str]:
-    """Sections in the order the sources were picked, written in parallel."""
+    """Sections in the order the sources were picked, written in parallel.
+    A section with nothing usable is left out, not spoken as an apology."""
     import asyncio
     from .sources import list_sources
     by_id = {s["id"]: s for s in list_sources()}
     srcs = [by_id[i] for i in source_ids if i in by_id]
     if not srcs:
-        return [f"{task['name']}的来源都被删除了。"]
-    return list(await asyncio.gather(*(
-        _full_section(src, settings, topic, i == 0, i == len(srcs) - 1) for i, src in enumerate(srcs))))
+        note_problem(task, "这个任务的来源都被删除了")
+        return []
+    out = []
+    for section in await asyncio.gather(*(
+            _full_section(src, settings, topic, i == 0, i == len(srcs) - 1) for i, src in enumerate(srcs))):
+        if isinstance(section, SectionFailed):
+            note_problem(task, str(section))
+        elif section:
+            out.append(section)
+    return out
 
 
-async def _run_source_digest(task: dict, settings: dict[str, str], topic: str, source_ids: list[int]) -> str:
+async def _run_source_digest(task: dict, settings: dict[str, str], topic: str, source_ids: list[int]) -> str | None:
     material, failures = await gather_material(source_ids, settings)
     for f in failures:
         log.warning("source fetch failed for task %s: %s", task["id"], f)
     if not material:
-        return f"{task['name']}没有取到内容：{'；'.join(failures) or '来源已被删除'}。"
+        note_problem(task, "没有取到内容：" + ("；".join(failures) or "来源已被删除"))
+        return None
     _, length_rule, max_tokens = LENGTHS.get(task.get("length") or "standard", LENGTHS["standard"])
     profile = settings.get("profile_notes", "").strip()
     now = datetime.now(local_tz(settings))
@@ -238,10 +289,12 @@ async def _run_source_digest(task: dict, settings: dict[str, str], topic: str, s
         text = (await _llm_complete(settings, system, user, max_tokens=max_tokens)).strip()
     except Exception as exc:  # pragma: no cover
         log.error("source digest generation failed: %s", exc)
-        return f"{task['name']}的播报生成失败，请稍后在控制台查看详情。"
-    if len(text) < 40:
-        log.warning("digest for task %s came back too short (%d chars)", task["id"], len(text))
-        return f"{task['name']}这次没能生成完整的播报，请稍后再试。"
+        note_problem(task, f"生成播报时出错（{exc.__class__.__name__}）")
+        return None
+    bad = _unusable(text)
+    if bad:
+        note_problem(task, bad)
+        return None
     return text
 
 
@@ -260,7 +313,10 @@ async def queue_task_now(task: dict, settings: dict[str, str]) -> str:
         texts = [await _run_news_analysis(task, settings)]
     else:
         texts = [task["payload"]]
-    texts = [" ".join(t.split()) for t in texts if t.strip()]  # one TTS line each
+    # Nothing usable: stay silent and let the console show why.
+    texts = [" ".join(t.split()) for t in texts if t and t.strip()]  # one TTS line each
+    if not texts:
+        return ""
     with get_conn() as conn:
         for t in texts:
             conn.execute("INSERT INTO announcements (task_id, text) VALUES (?, ?)", (task["id"], t))

@@ -236,6 +236,8 @@ async def dashboard(request: Request):
             "ORDER BY id DESC LIMIT 8"
         ).fetchall()
         task_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE enabled = 1").fetchone()[0]
+        problems = [dict(r) for r in conn.execute(
+            "SELECT * FROM task_problems ORDER BY id DESC LIMIT 3")]
     last_seen = _parse_ts(status["last_seen_at"]) if status else None
     online = bool(last_seen) and (now_local() - last_seen).total_seconds() < ONLINE_WINDOW_S
     report = (status["last_report"] or "") if status else ""
@@ -256,6 +258,7 @@ async def dashboard(request: Request):
             "pending": pending,
             "recent": recent,
             "task_count": task_count,
+            "problems": problems,
             "speed": speed.summary(),
             "s": settings,
         },
@@ -490,12 +493,15 @@ async def tasks_get(request: Request):
 def _render_tasks(request: Request, error: str = "", form: dict | None = None, status_code: int = 200):
     with get_conn() as conn:
         tasks = conn.execute("SELECT * FROM tasks ORDER BY enabled DESC, run_at ASC, id DESC").fetchall()
+        problems = [dict(r) for r in conn.execute(
+            "SELECT * FROM task_problems ORDER BY id DESC LIMIT 8")]
     srcs = sources.list_sources()
     names = {s["id"]: s["name"] for s in srcs}
     tasks = [{**dict(t), "source_names": [names.get(i, "已删除的来源") for i in sources.ids_from_text(t["source_ids"])]}
              for t in tasks]
     return templates.TemplateResponse(
         request, "tasks.html", {"tasks": tasks, "error": error, "form": form or {}, "sources": srcs,
+                                "problems": problems,
                                 "source_kinds": sources.KINDS, "newsnow_platforms": sources.NEWSNOW_PLATFORMS,
                                 "rsshub_routes": sources.RSSHUB_ROUTES,
                                 "source_error": request.query_params.get("source_err", "")},
@@ -1047,6 +1053,22 @@ async def device_announcement(token: str = Query(""), x_device_token: str | None
         return PlainTextResponse("")
     text = row["text"].replace("\t", " ").replace("\n", " ")
     return PlainTextResponse(f"{row['id']}\t{text}")
+
+
+@app.post("/api/device/announcements/clear", response_class=PlainTextResponse)
+async def device_announcements_clear(token: str = Query(""), x_device_token: str | None = Header(None)):
+    """The user said stop: drop what has not been spoken yet, so stopping a
+    briefing does not simply move on to the next section."""
+    if not _check_device_token(token, x_device_token):
+        return PlainTextResponse("forbidden", status_code=403)
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id FROM announcements WHERE delivered_at IS NULL").fetchall()
+        conn.execute("UPDATE announcements SET delivered_at = ? WHERE delivered_at IS NULL",
+                     (now_local().isoformat(),))
+        conn.commit()
+    if rows:
+        log.info("user said stop: dropped %d undelivered announcement(s)", len(rows))
+    return PlainTextResponse(str(len(rows)))
 
 
 @app.post("/api/device/announcement/{ann_id}/ack", response_class=PlainTextResponse)

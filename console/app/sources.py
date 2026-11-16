@@ -266,6 +266,25 @@ async def fetch_source(src: dict, settings: dict | None = None) -> list[str]:
         return await _web(client, src)
 
 
+def looks_unreadable(text: str) -> bool:
+    """True for anything that is not prose a presenter could read out: binary
+    or mojibake, a page of code, or a stub too short to say anything. A
+    briefing is skipped rather than read out as an apology."""
+    text = (text or "").strip()
+    if len(text) < 12:
+        return True
+    if "\ufffd" in text or any(ord(c) < 9 or 11 <= ord(c) < 32 for c in text):
+        return True
+    letters = sum(1 for c in text if c.isalnum() or "\u4e00" <= c <= "\u9fff")
+    if letters / len(text) < 0.55:
+        return True
+    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
+    codeish = sum(text.count(c) for c in "{};=<>_/\\|$#*")
+    if codeish > len(text) * 0.04 and cjk < len(text) * 0.25:
+        return True
+    return False
+
+
 async def full_items(src: dict, settings: dict, n: int = 10) -> list[dict]:
     """Top n items of one source with whatever body text we can get, for
     the 「完整」 briefing: {title, info, body}. Article pages are opened in
@@ -285,8 +304,9 @@ async def full_items(src: dict, settings: dict, n: int = 10) -> list[dict]:
                       "url": it.get("mobileUrl") or it.get("url") or ""} for it in raw[:n]]
         else:
             items = [{"title": t, "info": "", "url": ""} for t in (await fetch_source({**src, "max_items": n}, settings))[:n]]
+        items = [it for it in items if not looks_unreadable(it["title"])]
         if not items:
-            raise SourceError("这个来源暂时没有内容。")
+            raise SourceError("这个来源这次取到的内容没法播（空的，或者是乱码/网页代码）。")
 
         async def body(it: dict) -> str:
             url = it["url"]
@@ -303,7 +323,7 @@ async def full_items(src: dict, settings: dict, n: int = 10) -> list[dict]:
             return text[:900]
         bodies = await asyncio.gather(*(body(it) for it in items))
     for it, b in zip(items, bodies):
-        it["body"] = b
+        it["body"] = "" if looks_unreadable(b) else b
     # Hot-search entries are just a title: look each up so it can be told
     # properly instead of guessed at (skipped when no search key is set).
     bare = [it for it in items if not it["body"] and len(it["info"]) < 40]

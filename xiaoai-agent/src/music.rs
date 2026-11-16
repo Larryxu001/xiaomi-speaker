@@ -382,6 +382,13 @@ impl MusicService {
 
     pub async fn pause(&self) -> Value {
         if !self.has_current().await {
+            // Something else is audible (a story, an announcement): pause it
+            // rather than telling the user nothing is playing.
+            if native_status().await == Some(1) {
+                native_op("pause").await;
+                return json!({"paused": true, "note": "暂停了音箱正在播的内容"});
+            }
+            self.device.abort_current_output().await;
             return json!({"paused": false, "error": "no current song"});
         }
         let paused = if self.native_now().await { native_op("pause").await; Ok(()) } else { self.device.pause_audio().await };
@@ -421,16 +428,26 @@ impl MusicService {
         }
     }
 
+    /// Stops everything audible, whatever started it: our own music, the
+    /// firmware's player (stories, alarms, content it resumed by itself) and
+    /// any announcement being spoken. Never conditional on our own state —
+    /// "停止" has to mean stop even when we did not start the sound.
     pub async fn stop(&self) -> Value {
-        let native = self.native_now().await;
+        self.listening_duck.store(false, std::sync::atomic::Ordering::SeqCst);
         self.restore_after_interruption().await;
-        let stopped = if native { native_op("stop").await; Ok(()) } else { self.device.stop_audio().await };
+        let stopped = self.device.stop_audio().await;
+        // "stop", not "pause": a paused item is resumed by the firmware after
+        // the next announcement, which is how a story started by itself.
+        native_op("stop").await;
+        self.device.abort_current_output().await;
+        self.cancel_announcements().await;
         let mut state = self.state.lock().await;
         state.current = None;
         state.queue.clear();
         state.history.clear();
         state.paused = false;
         state.interruption = None;
+        drop(state);
         match stopped {
             Ok(()) => json!({"stopped": true}),
             Err(err) => json!({"stopped": false, "error": err.to_string()}),
@@ -438,6 +455,12 @@ impl MusicService {
     }
 
     pub async fn interrupt_for_wake(&self) -> bool {
+        // Content the firmware plays (a story, something it resumed) must go
+        // quiet while the user talks, even though we did not start it.
+        if !self.has_track().await && native_status().await == Some(1) {
+            native_op("pause").await;
+            return true;
+        }
         let native = self.native_now().await;
         let mode = if native { InterruptionAction::Pause } else { self.interruption_mode() };
         {
@@ -867,6 +890,47 @@ impl MusicService {
             if let Err(err) = self.device.unduck_audio().await {
                 warn!("恢复音乐音量失败：{err:?}");
             }
+        }
+    }
+
+    /// Anything audible at all, ours or the firmware's.
+    pub async fn anything_sounding(&self) -> bool {
+        self.is_active().await || native_status().await == Some(1)
+    }
+
+    /// Drops announcements the console has queued but not delivered, so
+    /// stopping a briefing does not just move on to the next section.
+    pub async fn cancel_announcements(&self) {
+        let cfg = &self.config.music.console;
+        if cfg.base_url.is_empty() {
+            return;
+        }
+        let url = format!("{}/api/device/announcements/clear", cfg.base_url.trim_end_matches('/'));
+        match self
+            .client
+            .post(&url)
+            .header("X-Device-Token", &cfg.token)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let dropped = resp.text().await.unwrap_or_default();
+                if dropped.trim() != "0" {
+                    tracing::info!("已取消还没播的定时播报：{}", dropped.trim());
+                }
+            }
+            Err(err) => warn!("取消定时播报失败：{err}"),
+        }
+    }
+
+    /// Leftover content in the firmware's player (a story from before, an
+    /// item it resumed) is cleared at startup: otherwise the next
+    /// announcement makes it start playing on its own.
+    pub async fn clear_leftover_native(&self) {
+        if native_status().await.is_some_and(|s| s != 0) {
+            native_op("stop").await;
+            tracing::info!("清掉了原生播放器里残留的内容");
         }
     }
 
