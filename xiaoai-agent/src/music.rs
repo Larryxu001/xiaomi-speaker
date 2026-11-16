@@ -153,6 +153,7 @@ impl MusicService {
         }
         // It plays right away; the turn ends without a spoken reply.
         self.native_started.store(true, std::sync::atomic::Ordering::SeqCst);
+        mark_native_playing(true);
         let title = said
             .lines()
             .next()
@@ -434,6 +435,7 @@ impl MusicService {
     /// "停止" has to mean stop even when we did not start the sound.
     pub async fn stop(&self) -> Value {
         self.listening_duck.store(false, std::sync::atomic::Ordering::SeqCst);
+        mark_native_playing(false);
         self.restore_after_interruption().await;
         let stopped = self.device.stop_audio().await;
         // "stop", not "pause": a paused item is resumed by the firmware after
@@ -795,7 +797,10 @@ impl MusicService {
                     self.play_query("", id).await
                 }
                 "stop" => self.stop().await,
-                "pause" => self.pause().await,
+                "pause" => {
+                    mark_native_playing(false);
+                    self.pause().await
+                }
                 "resume" => self.resume().await,
                 "next" => self.next().await,
                 "previous" => self.previous().await,
@@ -928,6 +933,7 @@ impl MusicService {
     /// item it resumed) is cleared at startup: otherwise the next
     /// announcement makes it start playing on its own.
     pub async fn clear_leftover_native(&self) {
+        mark_native_playing(false);
         if native_status().await.is_some_and(|s| s != 0) {
             native_op("stop").await;
             tracing::info!("清掉了原生播放器里残留的内容");
@@ -971,6 +977,7 @@ impl MusicService {
                     if native_idle >= 5 {
                         native_idle = 0;
                         self.state.lock().await.current = None;
+                        mark_native_playing(false);
                         tracing::info!("原生播放结束");
                     }
                 }
@@ -1362,6 +1369,17 @@ async fn native_status() -> Option<i64> {
         .collect::<String>()
         .parse()
         .ok()
+}
+
+/// say.sh reads this: while it exists, content in the firmware's player is
+/// ours on purpose and must not be silenced after we speak.
+fn mark_native_playing(on: bool) {
+    let path = "/tmp/xiaoai-native-playing";
+    if on {
+        let _ = std::fs::write(path, b"1");
+    } else {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// pause | play | stop | next | prev on the system media player.

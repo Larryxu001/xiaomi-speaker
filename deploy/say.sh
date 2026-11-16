@@ -22,6 +22,25 @@ resume_music() {
     rm -f /tmp/xiaoai-music.held
 }
 
+# When TTS ends (pnshelper event 15) the firmware resumes whatever its own
+# player still had loaded - a story, an album from an earlier request. If the
+# agent did not start that content, it must not come back on by itself, so
+# it is paused again for a few seconds after we stop talking. The agent
+# touches the marker file while it is deliberately playing native content.
+settle_native() {
+    [ -f /tmp/xiaoai-native-playing ] && return 0
+    i=0
+    while [ $i -lt 6 ]; do
+        sleep 1
+        case "$(ubus -t 2 call mediaplayer player_get_play_status 2>/dev/null)" in
+            *'"status\": 1'*)
+                ubus -t 2 call mediaplayer player_play_operation \
+                    '{"action":"pause","media":"app_ios"}' >/dev/null 2>&1 ;;
+        esac
+        i=$((i + 1))
+    done
+}
+
 play_url() {
     pause_music
     ubus call pnshelper event_notify '{"src":3,"event":14}' >/dev/null 2>&1
@@ -29,6 +48,7 @@ play_url() {
     result=$?
     ubus call pnshelper event_notify '{"src":3,"event":15}' >/dev/null 2>&1
     resume_music
+    settle_native &
     # A killed miplayer means the agent interrupted us; don't repeat in the native voice.
     exit $result
 }
@@ -48,6 +68,7 @@ native() {
     pause_music
     /usr/sbin/tts_play.sh --notify-pns "$text"
     result=$?
+    settle_native &
     resume_music
     exit $result
 }
