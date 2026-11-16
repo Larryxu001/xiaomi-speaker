@@ -38,6 +38,9 @@ pub struct SpeechCollector {
     /// While the speaker is talking, the mic also hears its echo; speech must
     /// be this many times louder (and last longer) to count as a barge-in.
     playback_boost: Option<f64>,
+    /// Diagnostics: how much audio arrived and how loud it got.
+    blocks: u64,
+    max_level: f64,
 }
 
 impl SpeechCollector {
@@ -68,6 +71,8 @@ impl SpeechCollector {
             last_completed: None,
             last_level_log: Instant::now(),
             playback_boost: None,
+            blocks: 0,
+            max_level: 0.0,
         }
     }
 
@@ -86,6 +91,13 @@ impl SpeechCollector {
         events
     }
 
+    /// "收到 3.2 秒音频，最大音量 0.0041（阈值 0.0060）": why nothing was heard.
+    pub fn summary(&self) -> String {
+        let secs = self.blocks as f64 * self.block_bytes as f64
+            / (self.sample_rate as f64 * BYTES_PER_SAMPLE as f64);
+        format!("收到 {secs:.1} 秒音频，最大音量 {:.4}（阈值 {:.4}）", self.max_level, self.threshold)
+    }
+
     pub fn log_noise_floor(&self, reason: &'static str) {
         self.log_noise_floor_with_trigger(reason, None);
     }
@@ -98,6 +110,10 @@ impl SpeechCollector {
         }
         apply_gain(&mut block, self.mic_gain);
         let level = rms_norm(&block);
+        self.blocks += 1;
+        if level > self.max_level {
+            self.max_level = level;
+        }
         if self.print_levels && self.last_level_log.elapsed() >= Duration::from_secs(1) {
             debug!("收音音量 {level:.5}");
             self.last_level_log = Instant::now();

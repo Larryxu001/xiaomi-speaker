@@ -159,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
                         info!("被「小爱同学」唤醒");
                         if let Some(active) = active_session.take() {
                             if !active.task.is_finished() {
+                                info!("上一轮对话还没结束，已打断");
                                 active.task.abort();
                             }
                             let _ = active.task.await;
@@ -493,7 +494,7 @@ async fn run_session(
                 return Ok(());
             }
             // Mid-conversation noise: keep listening instead of hanging up.
-            debug!("没听清，继续聆听");
+            info!("这一段没识别出话（多半是环境声），继续听");
             speech.continue_dialog(turn_id).await?;
             request_followup_capture().await?;
             let next = match &playback {
@@ -556,7 +557,7 @@ async fn run_session(
         }
         // Everyday one-liners (volume, next, lights, time) skip the model:
         // done right away, one short word back, conversation over.
-        if let Some(fast) = fast_intent(command, state.music.is_active().await) {
+        if let Some(fast) = fast_intent(command, state.music.has_track().await) {
             if let Some(previous) = playback.take() {
                 previous.playing.store(false, Ordering::Relaxed);
                 state.device.abort_current_output().await;
@@ -647,23 +648,15 @@ async fn run_session(
         exchanged = true;
         // With music on: the song carries on right after the answer, and the
         // same follow-up window as any other answer stays open.
+        // With music on, the conversation ends with the answer. An open mic
+        // over music mostly hears the music (commands were missed, and the
+        // next wake word could find the microphone busy); the wake word is
+        // the reliable way in, and it pauses the music first.
         if state.music.is_active().await && !reply.should_end {
             current.finish().await;
-            state.music.restore_after_interruption().await;
-            speech.continue_dialog(turn_id).await?;
-            request_followup_capture().await?;
-            match timeout(idle_timeout, followup_rx.recv()).await {
-                Ok(Some(next)) => {
-                    debug!("音乐继续，接着听");
-                    turn = next;
-                    continue;
-                }
-                _ => {
-                    info!("音乐在放，本轮对话结束");
-                    speech.finish_dialog(turn_id).await?;
-                    return Ok(());
-                }
-            }
+            info!("音乐在放，本轮对话结束（要下指令直接喊小爱同学）");
+            speech.finish_dialog(turn_id).await?;
+            return Ok(());
         }
         let barge_in = state.config.runtime.barge_in && !reply.should_end && !reply.text.trim().is_empty();
         if barge_in {
@@ -980,11 +973,22 @@ fn fast_intent(text: &str, music_on: bool) -> Option<Fast> {
     if down.iter().any(|w| t.contains(w)) && n <= 8 {
         return Some(Fast::Volume(-10, false));
     }
-    if music_on && ["下一首", "换一首", "切歌", "换首歌", "换台", "换一台", "下一个台", "下一集", "换一个"].iter().any(|w| t == *w || t == format!("{w}吧")) {
-        return Some(Fast::Next);
-    }
-    if music_on && ["上一首", "上一集", "上一个台"].contains(&t.as_str()) {
-        return Some(Fast::Previous);
+    if music_on {
+        // 下一曲 / 换个台 / 切歌 / 播放下一首歌 / 换一首吧 / 跳过 ... in any wording.
+        let mut k = t.clone();
+        for w in ["歌曲", "音乐", "电台", "频道", "节目", "播放", "切换到", "切换", "切到", "换到", "来", "放", "这首", "这个", "的", "了", "一下", "歌"] {
+            k = k.replace(w, "");
+        }
+        let k = k.trim_end_matches('吧');
+        let next = ["下一首", "下一曲", "下一个", "下一台", "下一集", "下首", "下个", "下一", "换一首", "换一曲", "换一个", "换一台",
+            "换台", "换首", "换个", "换个台", "换一个台", "换", "切", "跳过", "不想听", "不好听", "后一首", "后一个"];
+        let prev = ["上一首", "上一曲", "上一个", "上一台", "上一集", "上首", "上个", "前一首", "前一个", "上一"];
+        if next.contains(&k) {
+            return Some(Fast::Next);
+        }
+        if prev.contains(&k) {
+            return Some(Fast::Previous);
+        }
     }
     if ["几点了", "现在几点", "现在几点了", "几点钟了", "现在是几点", "现在什么时间"].contains(&t.as_str()) {
         return Some(Fast::Time);
@@ -1010,13 +1014,19 @@ async fn run_fast(state: &TurnState, fast: &Fast) -> String {
             let after = crate::tools::step_volume(target - now).await.unwrap_or(target.clamp(5, 100));
             format!("音量{after}")
         }
-        Fast::Next => {
-            state.music.next().await;
-            String::new()
-        }
-        Fast::Previous => {
-            state.music.previous().await;
-            String::new()
+        Fast::Next | Fast::Previous => {
+            let result = if *fast == Fast::Next { state.music.next().await } else { state.music.previous().await };
+            match result.get("song").and_then(|s| s.get("name")).and_then(|n| n.as_str()) {
+                Some(name) => {
+                    info!("切到：{name}");
+                    String::new()
+                }
+                None if result.get("playing").is_some() => String::new(),
+                None => {
+                    warn!("切换失败：{result}");
+                    if *fast == Fast::Next { "没有下一个了".to_string() } else { "前面没有了".to_string() }
+                }
+            }
         }
         Fast::Time => {
             let now = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Shanghai);
@@ -1198,6 +1208,12 @@ mod fast_tests {
         assert_eq!(fast_intent("把客厅灯关掉", false), Some(Fast::Home("把客厅灯关掉".into())));
         assert_eq!(fast_intent("换台。", true), Some(Fast::Next));
         assert_eq!(fast_intent("换台。", false), None);
+        for say in ["下一曲", "下一曲。", "换个台", "播放下一首歌", "切歌", "换一首吧", "下一首歌曲", "跳过这首", "换一个电台", "下一个"] {
+            assert_eq!(fast_intent(say, true), Some(Fast::Next), "{say}");
+        }
+        assert_eq!(fast_intent("上一曲", true), Some(Fast::Previous));
+        assert_eq!(fast_intent("换成周杰伦的歌", true), None);
+        assert_eq!(fast_intent("下一首放周杰伦", true), None);
         assert_eq!(fast_intent("现在几点？", false), Some(Fast::Time));
         assert_eq!(fast_intent("播放张学友的歌曲", true), None);
         assert_eq!(fast_intent("设置一个每天七点钟的闹钟", false), None);

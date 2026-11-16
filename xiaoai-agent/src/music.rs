@@ -841,6 +841,11 @@ impl MusicService {
         }
     }
 
+    /// A track or station is loaded (playing or paused): 下一首 has something to act on.
+    pub async fn has_track(&self) -> bool {
+        self.state.lock().await.current.is_some()
+    }
+
     /// Something of ours is playing, or paused only for the conversation.
     pub async fn is_active(&self) -> bool {
         let state = self.state.lock().await;

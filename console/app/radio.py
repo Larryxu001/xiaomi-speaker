@@ -101,7 +101,8 @@ def record_play(song_id: str) -> None:
         conn.execute(
             "INSERT INTO radio_history (station_id, name, tags, plays, skips, last_played) VALUES (?, ?, ?, 1, 0, ?) "
             "ON CONFLICT(station_id) DO UPDATE SET plays = plays + 1, last_played = excluded.last_played, "
-            "name = excluded.name",
+            "name = CASE WHEN excluded.name = substr(excluded.station_id, instr(excluded.station_id, ':') + 1) "
+            "THEN radio_history.name ELSE excluded.name END",
             (song_id, meta["name"], meta["tags"], now_local().isoformat(timespec="seconds")))
         conn.commit()
 
@@ -162,9 +163,32 @@ def stutter_risk(song_id: str) -> float:
     risk = 0.0
     if item.get("_cc") and item["_cc"] != "CN" and (item.get("_br") or 0) > HEAVY_KBPS:
         risk += 1.5
-    if item.get("_url") and item["_url"] in slow_urls():
+    if is_slow(song_id):
         risk += 3.0
     return risk
+
+
+def _url_map() -> dict[str, str]:
+    """station id -> stream URL, kept across restarts (the in-memory cache is not)."""
+    import json
+    try:
+        return json.loads(get_settings().get("radio_url_map") or "{}")
+    except ValueError:
+        return {}
+
+
+def _remember_url(song_id: str, upstream: str) -> None:
+    import json
+    from .db import set_settings
+    data = _url_map()
+    if data.get(song_id) != upstream:
+        data[song_id] = upstream
+        set_settings({"radio_url_map": json.dumps(dict(list(data.items())[-300:]))})
+
+
+def is_slow(song_id: str) -> bool:
+    url = (music._cache.get(song_id) or {}).get("_url") or _url_map().get(song_id)
+    return bool(url) and url in slow_urls()
 
 
 def slow_urls() -> dict[str, float]:
@@ -191,7 +215,7 @@ def station_view(s: dict) -> dict:
     item = music._cache.get(s["id"]) or {}
     br, cc = item.get("_br") or 0, item.get("_cc") or ""
     note = ""
-    if item.get("_url") and item["_url"] in slow_urls():
+    if is_slow(s["id"]):
         note = "最近卡过"
     elif cc and cc != "CN" and br > HEAVY_KBPS:
         note = "海外高码率，可能卡顿"
@@ -204,8 +228,16 @@ def recommended(limit: int = 12) -> list[dict]:
     if not src:
         return []
     score = taste()
-    known = [i for i, v in sorted(score.items(), key=lambda kv: -kv[1]) if v > 0]
-    out = [music.song(i) for i in known if i.startswith(f"{src['id']}:")]
+    known = [i for i, v in sorted(score.items(), key=lambda kv: -(kv[1] - stutter_risk(kv[0]))) if v > 0]
+    names = {h["station_id"]: h for h in history(200)} | {f["station_id"]: f for f in favourites()}
+    out = []
+    for i in known:
+        if not i.startswith(f"{src['id']}:"):
+            continue
+        st = music.song(i)
+        if i in names and st["name"] == i.split(":", 1)[-1]:  # not in memory: use the saved name
+            st = st | {"name": names[i]["name"], "album": names[i]["tags"], "artists": ["网络电台"]}
+        out.append(st)
     for i, (name, url, tags) in enumerate(music.CURATED):
         sid = f"{src['id']}:c{i}"
         if sid not in known:
@@ -214,8 +246,11 @@ def recommended(limit: int = 12) -> list[dict]:
 
 
 def next_after(song_id: str, limit: int = 10) -> list[dict]:
-    """What "换一台" moves to: liked stations first, never the same one."""
-    return [s for s in recommended(limit + 1) if s["id"] != song_id][:limit]
+    """What "换一台" moves to: liked stations first, never the same one, and
+    never one whose link stuttered lately (it would start with a long silence)."""
+    favs = {f["station_id"] for f in favourites()}
+    return [s for s in recommended(limit + 6)
+            if s["id"] != song_id and (s["id"] in favs or not is_slow(s["id"]))][:limit]
 
 
 # ---------------------------------------------------------- stream relay
@@ -223,6 +258,8 @@ def next_after(song_id: str, limit: int = 10) -> list[dict]:
 def relay_url(song_id: str, upstream: str, console_url: str) -> str:
     """Far-away (non-HLS) streams go through the console, which buffers a
     little before playing, so a slow overseas link stutters far less."""
+    if upstream:
+        _remember_url(song_id, upstream)
     if not upstream or ".m3u8" in upstream or "cnr.cn" in upstream or "qtfm" in upstream or "qingting" in upstream:
         return upstream  # domestic / HLS: direct is better
     token = get_settings().get("device_token", "")
@@ -237,7 +274,8 @@ def check_relay(sig: str, upstream: str) -> bool:
 
 
 async def relay(upstream: str):
-    """Yields the station's audio, starting after ~8 s worth has arrived.
+    """Yields the station's audio almost at once (about a second's worth is
+    held back so the player gets a clean start; it buffers on its own).
     Measures how fast the station really arrives: a link slower than the
     stream's bitrate can only stutter, so the station is marked and ranked
     lower next time."""
@@ -261,7 +299,7 @@ async def relay(upstream: str):
                 if first is not None:
                     first.append(chunk)
                     buffered += len(chunk)
-                    if buffered < max(96_000, need * 8):
+                    if buffered < min(48_000, max(16_000, need)):
                         continue
                     for c in first:
                         yield c

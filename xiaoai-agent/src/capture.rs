@@ -49,6 +49,15 @@ where
         tokio::select! {
             _ = &mut idle_timer, if !speech_started => {
                 collector.log_noise_floor("timeout");
+                tracing::info!("没等到说话：{}", collector.summary());
+                // Keep what the microphone frontend logged around this
+                // moment (its syslog rotates every few minutes).
+                tokio::spawn(async {
+                    let _ = crate::shell::run_shell(
+                        "{ date; grep -E 'mipns|pnshelper' /var/log/messages | tail -80; } > /tmp/xiaoai-capture-timeout.log 2>&1",
+                    )
+                    .await;
+                });
                 let _ = turn.stop_capture().await;
                 anyhow::bail!("timed out waiting for user speech");
             }
@@ -114,6 +123,15 @@ where
         tokio::select! {
             _ = &mut idle_timer, if !speech_started => {
                 collector.log_noise_floor("timeout");
+                tracing::info!("没等到说话：{}", collector.summary());
+                // Keep what the microphone frontend logged around this
+                // moment (its syslog rotates every few minutes).
+                tokio::spawn(async {
+                    let _ = crate::shell::run_shell(
+                        "{ date; grep -E 'mipns|pnshelper' /var/log/messages | tail -80; } > /tmp/xiaoai-capture-timeout.log 2>&1",
+                    )
+                    .await;
+                });
                 let _ = turn.stop_capture().await;
                 anyhow::bail!("timed out waiting for user speech");
             }
