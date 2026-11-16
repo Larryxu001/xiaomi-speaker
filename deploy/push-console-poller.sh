@@ -34,8 +34,8 @@ ssh -o BatchMode=yes "$HOST" '
   ( trap "" HUP
     . /data/open-xiaoai/console.env
     export XIAOAI_CONSOLE_URL XIAOAI_DEVICE_TOKEN
-    exec /data/open-xiaoai/console-poller.sh ) </dev/null >>/data/open-xiaoai/console-poller.log 2>&1 &
+    exec /data/open-xiaoai/console-poller.sh ) </dev/null >>/tmp/xiaoai-console-poller.log 2>&1 &
   sleep 1
-  tail -5 /data/open-xiaoai/console-poller.log 2>/dev/null || true
+  tail -5 /tmp/xiaoai-console-poller.log 2>/dev/null || true
 '
 echo "pushed console poller; pointing at $XIAOAI_CONSOLE_URL"

@@ -33,6 +33,31 @@
 
 <section class="panel" style="margin-top:20px">
   <div class="panel-head">
+    <h2>响应速度</h2>
+    <span class="muted" style="font-size:13px">从你说完到音箱开口或做完，单位秒</span>
+  </div>
+  {% if speed.week.sentences %}
+  <table class="table speed-table">
+    <thead><tr><th></th><th>最近 24 小时</th><th>最近 7 天</th></tr></thead>
+    <tbody>
+      {% macro v(x, unit='秒') %}{% if x is none %}<span class="muted">没有数据</span>{% else %}{{ x }} {{ unit }}{% endif %}{% endmacro %}
+      <tr><td>听到的指令</td><td>{{ speed.day.sentences }} 句</td><td>{{ speed.week.sentences }} 句</td></tr>
+      <tr><td>快速指令：说完到做完</td><td>{{ v(speed.day.fast_done) }}</td><td>{{ v(speed.week.fast_done) }}</td></tr>
+      <tr><td>需要思考的问题：说完到开口</td><td>{{ v(speed.day.llm_first) }}</td><td>{{ v(speed.week.llm_first) }}</td></tr>
+      <tr><td>其中语音识别</td><td>{{ v(speed.day.asr) }}</td><td>{{ v(speed.week.asr) }}</td></tr>
+      <tr><td>语音识别服务出错</td><td>{{ speed.day.asr_fail }} 次</td><td>{{ speed.week.asr_fail }} 次</td></tr>
+      <tr><td>唤醒后没听到说话</td><td>{{ speed.day.no_speech }} 次</td><td>{{ speed.week.no_speech }} 次</td></tr>
+      <tr><td>大模型出错</td><td>{{ speed.day.llm_fail }} 次</td><td>{{ speed.week.llm_fail }} 次</td></tr>
+    </tbody>
+  </table>
+  {% if speed.week.slowest %}<div class="panel-body muted" style="font-size:13px">7 天里最慢的一次：{{ speed.week.slowest.ts }}，{{ speed.week.slowest.secs }} 秒才开口（{{ speed.week.slowest.what }}…）</div>{% endif %}
+  {% else %}
+  <div class="panel-body"><p class="muted" style="margin:0">还没有数据。对音箱说几句话，这里就会出现它的反应时间。</p></div>
+  {% endif %}
+</section>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head">
     <h2>运行日志</h2>
     <span class="muted" style="font-size:13px">音箱最近的活动，新的在上面</span>
   </div>

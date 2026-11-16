@@ -13,7 +13,7 @@ if [ -f /data/open-xiaoai/console.env ] && [ -x /data/open-xiaoai/console-poller
         . /data/open-xiaoai/console.env
         export XIAOAI_CONSOLE_URL XIAOAI_DEVICE_TOKEN
         exec /data/open-xiaoai/console-poller.sh
-    ) >>/data/open-xiaoai/console-poller.log 2>&1 &
+    ) >>/tmp/xiaoai-console-poller.log 2>&1 &
 fi
 # 3) 启动 XiaoAI Agent（接管语音链路；失败会自动回滚到原生小爱）
 exec /data/open-xiaoai/start-agent.sh start

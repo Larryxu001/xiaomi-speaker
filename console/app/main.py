@@ -36,7 +36,7 @@ from . import auth
 from .config_render import render_agent_yaml
 from .db import get_conn, get_settings, init_db, now_local, set_settings
 from .providers import ProviderError, list_models, test_asr, test_llm, test_search, web_search
-from . import apps_service, ideas, installer_client, shortcuts
+from . import apps_service, ideas, installer_client, shortcuts, speed
 from .log_view import parse_log
 from .mcp_probe import list_remote_tools
 from .mcp_server import DeviceTokenAuth, build_mcp_app, mcp
@@ -52,6 +52,7 @@ init_db()  # must run before reading session_secret below
 sources.seed_defaults()
 music.seed_defaults()
 ideas.init()
+speed.init()
 
 # Hosts the console's MCP endpoint answers to (DNS-rebinding protection).
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get(
@@ -255,6 +256,7 @@ async def dashboard(request: Request):
             "pending": pending,
             "recent": recent,
             "task_count": task_count,
+            "speed": speed.summary(),
             "s": settings,
         },
     )
@@ -1564,6 +1566,10 @@ async def device_status(request: Request, token: str = Query(""), x_device_token
             (now_local().isoformat(), body),
         )
         conn.commit()
+    try:
+        speed.ingest(re.sub(r"\x1b\[[0-9;]*m", "", body))
+    except Exception as exc:  # never fail the speaker's report over statistics
+        log.warning("speed ingest failed: %s", exc)
     return PlainTextResponse("ok")
 
 

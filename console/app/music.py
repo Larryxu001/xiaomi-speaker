@@ -714,6 +714,8 @@ async def search(q: str, limit: int = 5) -> list[dict]:
     import asyncio
 
     q, limit = (q or "").strip(), max(1, min(int(limit), 20))
+    want = limit
+    limit = max(limit, 15)  # enough candidates to vary a singer's songs
     # A QQ source whose login has expired only returns links that fail.
     sources = [s for s in song_sources(enabled_only=True)
                if not (s["kind"] == "qqmusic" and s["config"].get("expired"))]
@@ -732,7 +734,8 @@ async def search(q: str, limit: int = 5) -> list[dict]:
     # the song are not played (stations are untouched).
     results = [r for r in results
                if r.get("album") != "非原版" and (r.get("artists") == ["网络电台"] or r.get("artists") == ["精选电台"]
-                                                 or _is_original_take(r))][:limit]
+                                                 or _is_original_take(r))]
+    results = _vary_for_singer(q, results)[:want]
     if not results and errors:
         raise MusicError("；".join(errors))
     if not results and any(s["kind"] in ("netease", "qqmusic", "kugou") for s in sources) \
@@ -741,6 +744,46 @@ async def search(q: str, limit: int = 5) -> list[dict]:
     if not results and not sources:
         raise MusicError("还没有能搜歌的音源。请在控制台「音乐」页添加网易云、QQ 音乐、酷狗或曲库。")
     return results
+
+
+# What was handed to the speaker lately (song id and title), so asking for
+# the same singer again starts with something else and auto-play doesn't loop.
+_recent_ids: list[str] = []
+_recent_titles: list[str] = []
+
+
+def _note_played(song_id: str) -> None:
+    title = _title_key((_cache.get(song_id) or {}).get("name") or "")
+    for store, value in ((_recent_ids, song_id), (_recent_titles, title)):
+        if value:
+            if value in store:
+                store.remove(value)
+            store.append(value)
+            del store[:-40]
+
+
+def _played_lately(song: dict) -> bool:
+    return song["id"] in _recent_ids or _title_key(song.get("name") or "") in _recent_titles
+
+
+def _vary_for_singer(q: str, results: list[dict]) -> list[dict]:
+    """「放张学友的歌」: start with one of the singer's own popular songs, a
+    different one each time. A request for a title keeps the best match first."""
+    singer = q
+    for w in ("的歌曲", "的歌", "歌曲", "的音乐", "播放", "来点", "来首", "放"):
+        singer = singer.replace(w, "")
+    singer = singer.strip()
+    mine = [r for r in results if any(_artist_is(singer, a) for a in r.get("artists") or [])]
+    if not singer or len(mine) < 3 or any(_title_key(r.get("name") or "") == _title_key(q) for r in results[:2]):
+        return results
+    solo = [r for r in mine if len(r.get("artists") or []) == 1]
+    duet = [r for r in mine if len(r.get("artists") or []) != 1]
+    fresh = [r for r in solo if not _played_lately(r)] or [r for r in duet if not _played_lately(r)] or solo or duet
+    lead = random.choice(fresh[:8])
+    seen = {lead["id"]}
+    rest = [r for r in [x for x in solo if not _played_lately(x)] + [x for x in duet if not _played_lately(x)]
+            + mine + results if not (r["id"] in seen or seen.add(r["id"]))]
+    return [lead] + rest
 
 
 async def random_songs(limit: int = 10) -> list[dict]:
@@ -784,6 +827,16 @@ def _good_original(t: dict, logged_in: bool) -> bool:
 
 
 async def more_like(song_id: str, limit: int = 10) -> list[dict]:
+    """What plays next, never something handed out in the last 40 plays (while
+    there is anything else)."""
+    picks = await _more_like(song_id, limit + 10)
+    if picks and picks[0].get("artists") in (["网络电台"], ["精选电台"]):
+        return picks[:limit]
+    fresh = [p for p in picks if not _played_lately(p)]
+    return (fresh or picks)[:limit]
+
+
+async def _more_like(song_id: str, limit: int = 10) -> list[dict]:
     """What to play next once a song ends ("play on until I say stop"): the
     singer's popular songs mixed with NetEase's similar songs, originals only."""
     sid, _, item_id = song_id.partition(":")
@@ -861,6 +914,11 @@ def song(song_id: str) -> dict:
 
 
 async def play_url(song_id: str) -> str:
+    _note_played(song_id)
+    return await _play_url(song_id)
+
+
+async def _play_url(song_id: str) -> str:
     sid, _, item_id = song_id.partition(":")
     cached = _cache.get(song_id)
     if cached and cached.get("_url"):

@@ -19,7 +19,8 @@ DEVICE_TOKEN=${XIAOAI_DEVICE_TOKEN:-}
 CHECK_INTERVAL=${XIAOAI_CONSOLE_POLL_INTERVAL:-20}
 AGENT_HOME=${XIAOAI_AGENT_HOME:-/data/open-xiaoai}
 AGENT_CONFIG=$AGENT_HOME/agent.yaml
-AGENT_LOG=${XIAOAI_AGENT_LOG:-$AGENT_HOME/xiaoai-agent.log}
+AGENT_LOG=${XIAOAI_AGENT_LOG:-/tmp/xiaoai-agent.log}
+LOG_MAX_BYTES=1048576  # logs are in RAM: keep each under 1 MB
 LAUNCHER=$AGENT_HOME/start-agent.sh
 STATE_DIR=/tmp/xiaoai-console-poller
 NEW_CONFIG=$STATE_DIR/agent.yaml.new
@@ -118,7 +119,20 @@ sync_wake_clips() {
     log "wake clips now use voice: $sig"
 }
 
+# Keep the newest lines of a log that grew past the limit. The writer has
+# the file open in append mode, so it is rewritten in place, not replaced.
+trim_log() {
+    [ -f "$1" ] || return 0
+    size=$(wc -c <"$1" 2>/dev/null || echo 0)
+    [ "$size" -gt "$LOG_MAX_BYTES" ] || return 0
+    tail -n 2000 "$1" >"$STATE_DIR/trim.tmp" 2>/dev/null && cat "$STATE_DIR/trim.tmp" >"$1"
+    rm -f "$STATE_DIR/trim.tmp"
+}
+
 report_status() {
+    trim_log "$AGENT_LOG"
+    trim_log /tmp/xiaoai-console-poller.log
+    trim_log /tmp/xiaoai-agent-launcher.log
     agent_status=$("$LAUNCHER" status 2>&1)
     tail_log=""
     # Last 80 info/warning/error lines (the agent logs in Chinese); debug

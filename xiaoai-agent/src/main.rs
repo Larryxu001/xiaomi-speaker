@@ -53,7 +53,18 @@ struct Cli {
     /// (diagnostics; doesn't touch the speech socket).
     #[arg(long)]
     asr_test: Option<std::path::PathBuf>,
+    /// Send TEXT to the running agent as if it had just been heard, print
+    /// what it did, and exit. Nothing is spoken unless --aloud is given;
+    /// actions (music, volume, devices) are real.
+    #[arg(long)]
+    text: Option<String>,
+    #[arg(long)]
+    aloud: bool,
 }
+
+/// Local-only text entry (root-owned socket in /tmp): the same handling as
+/// a spoken sentence, for testing without talking to the speaker.
+const TEXT_SOCKET: &str = "/tmp/xiaoai-agent-text.sock";
 
 /// Third-party crates (model client, MCP client, HTTP stack) log in English;
 /// keep them quiet unless something goes wrong. Our own messages are Chinese.
@@ -117,6 +128,18 @@ async fn main() -> anyhow::Result<()> {
         AppConfig::load(&cli.config)
             .with_context(|| format!("failed to load config {}", cli.config.display()))?,
     );
+    if let Some(text) = &cli.text {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::UnixStream::connect(TEXT_SOCKET)
+            .await
+            .context("the agent is not running (no text socket)")?;
+        let line = format!("{}{}\n", if cli.aloud { "aloud:" } else { "" }, text.replace('\n', " "));
+        stream.write_all(line.as_bytes()).await?;
+        let mut out = String::new();
+        stream.read_to_string(&mut out).await?;
+        println!("{}", out.trim_end());
+        return Ok(());
+    }
     if let Some(path) = &cli.asr_test {
         let wav = std::fs::read(path)?;
         let asr = AsrClient::new(config.asr.clone())?;
@@ -134,6 +157,22 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(music.clone().report_now_playing());
     let airplay = AirPlayService::start(config.airplay.clone()).await?;
     let agent = Arc::new(AgentRuntime::new(config.clone(), device.clone(), music.clone()).await?);
+
+    {
+        let state = TurnState {
+            config: config.clone(),
+            device: device.clone(),
+            asr: asr.clone(),
+            agent: agent.clone(),
+            music: music.clone(),
+            airplay: airplay.clone(),
+        };
+        tokio::spawn(async move {
+            if let Err(err) = serve_text(state).await {
+                warn!("文字入口没有启动：{err:?}");
+            }
+        });
+    }
 
     info!("语音服务已就绪");
     device
@@ -657,7 +696,7 @@ async fn run_session(
         };
         info!(
             "回答：{}（识别 {:.1} 秒，思考到开口 {:.1} 秒，写完 {:.1} 秒）",
-            reply.text,
+            reply.text.replace('\n', " "),
             asr_secs,
             current.first_piece_secs(think_started),
             think_started.elapsed().as_secs_f64()
@@ -989,6 +1028,94 @@ fn shortcut_for<'a>(shortcuts: &'a [crate::config::Shortcut], text: &str) -> Opt
             let key = shortcut_core(&sc.say);
             !key.is_empty() && (said == key || (key.chars().count() >= 4 && said.contains(&key)))
         })
+}
+
+async fn serve_text(state: TurnState) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let _ = std::fs::remove_file(TEXT_SOCKET);
+    let listener = tokio::net::UnixListener::bind(TEXT_SOCKET)?;
+    std::fs::set_permissions(TEXT_SOCKET, std::fs::Permissions::from_mode(0o600))?;
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let state = state.clone();
+        tokio::spawn(async move {
+            let (read, mut write) = stream.into_split();
+            let mut line = String::new();
+            if BufReader::new(read).read_line(&mut line).await.is_err() {
+                return;
+            }
+            let line = line.trim();
+            let (aloud, text) = match line.strip_prefix("aloud:") {
+                Some(rest) => (true, rest.trim()),
+                None => (false, line),
+            };
+            if text.is_empty() {
+                return;
+            }
+            info!("文字入口：{text}");
+            let out = handle_text(&state, text, aloud).await;
+            info!("文字入口结果：{}", out.replace('\n', " "));
+            let _ = write.write_all(format!("{out}\n").as_bytes()).await;
+        });
+    }
+}
+
+/// One sentence through the same steps as a spoken one: shortcut, pause /
+/// resume, fast command, goodbye, then the model.
+async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
+    let started = std::time::Instant::now();
+    let expanded;
+    let mut notes = String::new();
+    let command = match shortcut_for(&state.config.agent.shortcuts, text) {
+        Some(sc) => {
+            notes = format!("快捷指令「{}」→ {}\n", sc.say, sc.run);
+            expanded = sc.run.clone();
+            expanded.as_str()
+        }
+        None => text,
+    };
+    if let Some(resume) = pause_intent(command) {
+        let result = if resume { state.music.resume().await } else { state.music.pause().await };
+        return format!("{notes}{}：{result}", if resume { "继续播放" } else { "暂停播放" });
+    }
+    if let Some(fast) = fast_intent(command, state.music.has_track().await) {
+        let said = run_fast(state, &fast).await;
+        if aloud && !said.is_empty() {
+            let _ = state.device.speak(&said).await;
+        }
+        return format!("{notes}快速指令 {fast:?} → {said}（执行 {:.1} 秒）", started.elapsed().as_secs_f64());
+    }
+    if let Some(stop_music) = exit_intent(command) {
+        if stop_music && state.music.is_active().await {
+            state.music.stop().await;
+        }
+        return format!("{notes}结束对话（停止音乐：{stop_music}）");
+    }
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let reply = state.agent.run_turn(command, tx).await;
+    let mut first_piece = String::new();
+    while let Ok(piece) = rx.try_recv() {
+        if first_piece.is_empty() {
+            first_piece = piece;
+        }
+    }
+    let native = state.music.take_native_started();
+    match reply {
+        Ok(reply) => {
+            if aloud && !native && !reply.text.contains(IGNORE_MARK) {
+                let _ = state.device.speak(&reply.text).await;
+            }
+            format!(
+                "{notes}回答：{}（写完 {:.1} 秒{}{}）",
+                reply.text.replace('\n', " "),
+                started.elapsed().as_secs_f64(),
+                if reply.should_end { "，结束对话" } else { "" },
+                if native { "，原生内容已开播" } else { "" }
+            )
+        }
+        Err(err) => format!("{notes}大模型调用失败：{err}"),
+    }
 }
 
 #[derive(Debug, PartialEq)]

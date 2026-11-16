@@ -5,7 +5,8 @@ set -u
 AGENT_HOME=${XIAOAI_AGENT_HOME:-/data/open-xiaoai}
 AGENT_BIN=${XIAOAI_AGENT_BIN:-$AGENT_HOME/xiaoai-agent}
 AGENT_CONFIG=${XIAOAI_AGENT_CONFIG:-$AGENT_HOME/agent.yaml}
-AGENT_LOG=${XIAOAI_AGENT_LOG:-$AGENT_HOME/xiaoai-agent.log}
+# Logs live in RAM (/tmp): the flash wears out with every write.
+AGENT_LOG=${XIAOAI_AGENT_LOG:-/tmp/xiaoai-agent.log}
 RUNTIME_DIR=${XIAOAI_RUNTIME_DIR:-/tmp/xiaoai-agent}
 PID_FILE=$RUNTIME_DIR/xiaoai-agent.pid
 WATCHDOG_PID_FILE=$RUNTIME_DIR/watchdog.pid
@@ -233,10 +234,10 @@ start_watchdog() {
             [ -n "$reason" ] || continue
             log "$reason; restarting the runtime takeover"
             rm -f "$WATCHDOG_PID_FILE"
-            "$LAUNCHER" restart >>"$AGENT_HOME/xiaoai-agent-launcher.log" 2>&1
+            "$LAUNCHER" restart >>/tmp/xiaoai-agent-launcher.log 2>&1
             exit
         done
-    ) </dev/null >>"$AGENT_HOME/xiaoai-agent-launcher.log" 2>&1 &
+    ) </dev/null >>/tmp/xiaoai-agent-launcher.log 2>&1 &
     printf '%s\n' "$!" >"$WATCHDOG_PID_FILE"
 }
 
