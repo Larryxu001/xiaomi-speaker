@@ -366,6 +366,9 @@ async fn run_session(
             }
         };
         let mut heard_at = std::time::Instant::now();
+        // What the microphone actually gave us, so an empty transcript can be
+        // told apart from a microphone that heard nothing.
+        let mut captured: Option<(f64, f64)> = None;
         let text = if let Some(mut stream) = maybe_stream {
             if stream.server_vad_enabled() {
                 let device_for_server_start = device_for_speech.clone();
@@ -519,6 +522,10 @@ async fn run_session(
             state.device.show_led(led.led_thinking).await;
             state.device.play_heard_sound().await;
             heard_at = std::time::Instant::now();
+            captured = Some((
+                pcm.len() as f64 / (state.config.capture.sample_rate as f64 * 2.0),
+                crate::vad::peak_norm(&pcm),
+            ));
             match state
                 .asr
                 .transcribe_pcm(&pcm, state.config.capture.sample_rate)
@@ -535,6 +542,10 @@ async fn run_session(
         let command = text.trim();
         let was_held = held.swap(false, Ordering::Relaxed);
         if command.is_empty() {
+            match captured {
+                Some((secs, peak)) => info!("没识别出内容：录到 {secs:.1} 秒，峰值音量 {peak:.4}"),
+                None => info!("没识别出内容"),
+            }
             if was_held {
                 state.device.hold_speech(false).await; // noise, not the user: go on
             }
@@ -824,6 +835,9 @@ async fn open_followup(
 
 /// A reply being spoken in the background, sentence by sentence as the
 /// model writes it, while the mic may already listen for a barge-in.
+/// A reply longer than this is spoken in parts rather than in one go.
+const LONG_REPLY_CHARS: usize = 70;
+
 struct Playback {
     playing: Arc<std::sync::atomic::AtomicBool>,
     first_piece_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
@@ -843,7 +857,6 @@ impl Playback {
         let task = tokio::spawn(async move {
             let mut stream: Option<(String, JoinHandle<()>)> = None;
             let mut pending = String::new();
-            let mut said_any = false;
             let client = http_client();
             let base = console.base_url.trim_end_matches('/').to_string();
             while let Some(piece) = pieces.recv().await {
@@ -876,15 +889,19 @@ impl Playback {
                     // Native or WAV voices: say each sentence in turn. Each
                     // piece is synthesized alone, so a short opener ("好的，")
                     // would sound off; wait for a whole sentence first.
+                    // One utterance for an ordinary reply: each piece is a
+                    // separate synthesis request with a gap before it, so
+                    // splitting a short answer makes it sound chopped up.
+                    // Only a long one (a briefing) is broken into parts, so
+                    // it can start before the whole text is written.
                     pending.push_str(&piece);
                     let whole = pending.trim_end().ends_with(['。', '！', '？', '!', '?', '；', '…']);
-                    // The first clause goes out as soon as it is long enough
-                    // to sound natural, so the answer starts sooner.
-                    let clause = !said_any && pending.chars().count() >= 8 && pending.trim_end().ends_with(['，', ',', '：']);
-                    if !whole && !clause && pending.chars().count() < 40 {
+                    let len = pending.chars().count();
+                    // Hold a short reply back until it is complete, then say
+                    // it in one go. Break a long one at a sentence end.
+                    if !(whole && len >= LONG_REPLY_CHARS) && len < LONG_REPLY_CHARS * 2 {
                         continue;
                     }
-                    said_any = true;
                     let piece = std::mem::take(&mut pending);
                     let spoken = if voice_is_native() { device.speak_native(&piece).await } else { device.speak(&piece).await };
                     if let Err(err) = spoken {

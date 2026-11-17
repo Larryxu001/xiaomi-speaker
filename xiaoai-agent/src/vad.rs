@@ -252,7 +252,7 @@ fn rms_norm(block: &[u8]) -> f64 {
     }
 }
 
-fn peak_norm(block: &[u8]) -> f64 {
+pub fn peak_norm(block: &[u8]) -> f64 {
     block
         .chunks_exact(BYTES_PER_SAMPLE)
         .map(|sample| i16::from_le_bytes([sample[0], sample[1]]).unsigned_abs() as f64)

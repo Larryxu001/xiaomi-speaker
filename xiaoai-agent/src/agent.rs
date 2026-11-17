@@ -21,6 +21,21 @@ use crate::mcp::McpConnections;
 use crate::music::MusicService;
 use crate::tools::*;
 
+/// Only while the microphone stays open without a wake word can a sentence
+/// be someone else's. With follow-up listening off, every sentence arrived
+/// right after "小爱同学", so ignoring one means ignoring the user.
+const IGNORE_RULE: &str = "音箱会继续听用户接着说的话，所以会听到旁边人的聊天、电视声、自言自语和半句话。如果这句话明显不是对你说的、或者没有能执行的意思（家人间的方言聊天、零碎片段、与上文无关的话），只输出【忽略】这三个字，不要追问、不要猜。";
+
+/// 听错一个字是常事（「下一曲」听成「下一句」）：按意思去理解，不要因为字面
+/// 奇怪就当成不是对自己说的。
+const MISHEARD_RULE: &str = "用户每句话都是刚喊过「小爱同学」之后说的，所以一定是对你说的，必须回应。语音识别偶尔会听错字（「下一曲」听成「下一句」，「停止」听成「天资」），遇到奇怪的词先按读音和当前在做的事去猜它的意思；实在猜不出来，就问一句「你是说……吗」，绝不要沉默或当作没听见。";
+
+fn instructions(config: &AppConfig) -> String {
+    let mut out = SPEAKER_AGENT_INSTRUCTIONS.to_string();
+    out.push_str(if config.runtime.follow_up { IGNORE_RULE } else { MISHEARD_RULE });
+    out
+}
+
 pub const SPEAKER_AGENT_INSTRUCTIONS: &str = concat!(
     "你是小爱，住在用户家里音箱上的私人助理。说话像一个熟悉、靠谱、有温度的朋友：自然、简洁、有分寸。",
     "你说的每句话都会被直接读出来，所以要用口语，不用 Markdown、不用列表符号、不读网址，也不要输出思考过程。",
@@ -38,7 +53,6 @@ pub const SPEAKER_AGENT_INSTRUCTIONS: &str = concat!(
     "用户说「没有了」「不用了」「就这样」「好的谢谢」「再见」「没事了」这类表示结束的话时，必须调用 end_conversation，",
     "并用一句温暖简短的话收尾，比如「好的，有需要随时叫我」「行，那我先退下了」，每次说法可以不一样。",
     "用户只说「谢谢」但没有要结束的意思时，回一句「不客气」就好。",
-    "音箱会继续听用户接着说的话，所以会听到旁边人的聊天、电视声、自言自语和半句话。如果这句话明显不是对你说的、或者没有能执行的意思（家人间的方言聊天、零碎片段、与上文无关的话），只输出【忽略】这三个字，不要追问、不要猜。",
     "当前日期和时间已经写在每轮消息开头，问几点、星期几、几号直接回答，不要调用工具。问天气或预报时必须调用天气工具。",
     "用户话里有任何让你停下的意思（停止、别放了、关掉、闭嘴、安静、你听不懂吗），立刻调用停止播放工具，再回一句很短的话。这种时候绝不能回「没听清」「再说一遍」，也不能只暂停。",
     "用户说换一首、下一个、切歌、跳过、换个台这类意思，直接调用下一首工具；说大点声、小一点、调到多少，直接调用音量工具。不要反问，不要先查播放状态。",
@@ -331,7 +345,7 @@ impl AgentRuntime {
 
         let agent = client
             .agent(llm.model.as_str())
-            .preamble(SPEAKER_AGENT_INSTRUCTIONS)
+            .preamble(&instructions(&self.config))
             .temperature(llm.temperature)
             .max_tokens(llm.max_tokens)
             .default_max_turns(MAX_TOOL_TURNS)
@@ -367,7 +381,7 @@ impl AgentRuntime {
 
         let mut builder = client
             .agent(llm.model.as_str())
-            .preamble(SPEAKER_AGENT_INSTRUCTIONS)
+            .preamble(&instructions(&self.config))
             .max_tokens(llm.max_tokens)
             .default_max_turns(MAX_TOOL_TURNS)
             .additional_params(anthropic_thinking_params(
@@ -601,7 +615,9 @@ const FILLER_TEXT: &str = "稍等，我查一下";
 fn filler_for(tool: &str) -> Option<&'static str> {
     match tool {
         "web_search" | "get_weather" | "read_source_now" => Some(FILLER_TEXT),
-        "play_music_query" | "play_random_music" | "add_music_to_play_queue" | "play_radio" | "play_native_content" => Some("好嘞。"),
+        // Music needs no "好嘞": the sound itself arrives within a second
+        // or two and saying it first only splits the reply in two.
+        "play_native_content" => Some("好嘞。"),
         _ => None,
     }
 }

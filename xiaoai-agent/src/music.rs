@@ -186,10 +186,6 @@ impl MusicService {
                "hint": "已经开始播放，本轮不用再说话"})
     }
 
-    pub fn native_started(&self) -> bool {
-        self.native_started.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
     /// The new track is the answer: a spoken line would only arrive after the
     /// music has already started and duck it.
     fn answered_with_sound(&self) {

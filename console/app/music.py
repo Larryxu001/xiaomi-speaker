@@ -1004,8 +1004,15 @@ async def _play_url(song_id: str) -> str:
                     break
             if not found.get("url"):
                 raise MusicError("网易云不给这首歌的播放地址，通常是需要会员或已下架。")
-            if found.get("freeTrialInfo"):
-                _NOTES[song_id] = "会员歌，只能先放约 30 秒试听"
+            trial = found.get("freeTrialInfo") or {}
+            if trial:
+                # Only say a number the service actually gave us.
+                try:
+                    secs = int(trial.get("end", 0)) - int(trial.get("start", 0))
+                except (TypeError, ValueError):
+                    secs = 0
+                _NOTES[song_id] = (f"会员歌，只能先放 {secs} 秒试听" if 5 <= secs <= 600
+                                   else "会员歌，只能先放一小段试听")
             return str(found["url"])
         if not cfg.get("url"):
             raise MusicError("这首歌没有播放地址。")
