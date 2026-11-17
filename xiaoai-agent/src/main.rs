@@ -1096,7 +1096,7 @@ async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
                 reply.text.replace('\n', " "),
                 started.elapsed().as_secs_f64(),
                 if reply.should_end { "，结束对话" } else { "" },
-                if native { "，原生内容已开播" } else { "" }
+                if native { "，用声音回答，没有说话" } else { "" }
             )
         }
         Err(err) => {
