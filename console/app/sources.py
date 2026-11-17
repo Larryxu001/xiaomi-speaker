@@ -237,6 +237,23 @@ def _nearest_link(page: str, keyword: str, base_url: str) -> str | None:
     return urljoin(base_url, best) if best else None
 
 
+def _strip_chrome(text: str) -> str:
+    """Drop the site's navigation above the article.
+
+    _text_of puts each menu item on its own line, so a page's chrome is a run of
+    very short lines. Everything before the first line long enough to be prose
+    goes, except that line's immediate predecessor, which is usually the
+    headline. Without this a briefing opened by reading out a thousand
+    characters of "网易首页 应用 网易新闻 ..." before reaching the news.
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if len(line.strip()) >= 30:
+            start = i - 1 if i and 4 <= len(lines[i - 1].strip()) <= 30 else i
+            return "\n".join(lines[start:]).strip()
+    return text
+
+
 async def _web(client, src) -> list[str]:
     page = await _get(client, src["target"])
     follow = (src.get("follow") or "").strip()
@@ -245,7 +262,7 @@ async def _web(client, src) -> list[str]:
         if not link:
             raise SourceError(f"页面里找不到标题含「{follow}」的文章。")
         page = await _get(client, link)
-    text = _text_of(page)
+    text = _strip_chrome(_text_of(page))
     if follow and follow in text:
         text = text[text.find(follow):]  # skip site navigation above the title
     if len(text) < 40:
