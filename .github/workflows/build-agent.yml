@@ -100,10 +100,23 @@ jobs:
 
           tag="$GITHUB_REF_NAME"
           asset="dist/xiaoai-agent#xiaoai-agent-armv7-glibc-2.25"
+          # The asset keeps the file's own name, so
+          # releases/latest/download/xiaoai-agent always points at it and
+          # deploy/install.sh can fetch it without knowing the version.
           cat > release-notes.md <<'EOF'
-          XiaoAI Agent ARMv7 binary for OH2P.
+          Prebuilt agent for the Xiaomi Smart Speaker Pro (OH2P).
 
-          Target: armv7-unknown-linux-gnueabihf.2.25
+          Install it on a speaker that already runs the patched firmware:
+
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/Larryxu001/xiaomi-speaker/main/deploy/install.sh | sh -s -- \
+            --speaker root@<speaker ip> --console https://<your console> --token <device token>
+          ```
+
+          The console's overview page prints that command with your own
+          address and token filled in. See the README for the four steps.
+
+          Target: armv7-unknown-linux-gnueabihf.2.25 (glibc 2.25)
           Firmware tested by this project: OH2P 1.62.2
           EOF
 
