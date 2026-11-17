@@ -652,7 +652,7 @@ async fn run_session(
             let music = state.music.clone();
             tokio::spawn(async move {
                 while let Some(piece) = raw_rx.recv().await {
-                    if music.native_started() {
+                    if music.silent_reply() {
                         continue;
                     }
                     if fwd_tx.send(piece).is_err() {
@@ -662,6 +662,7 @@ async fn run_session(
             });
         }
         state.music.take_native_started();
+        state.music.take_silent_reply();
         let current = Playback::start(state.device.clone(), state.config.music.console.clone(), reply_rx);
         let reply = match state.agent.run_turn(command, reply_tx).await {
             Ok(reply) => reply,
@@ -691,9 +692,10 @@ async fn run_session(
             think_started.elapsed().as_secs_f64()
         );
         state.device.shut_led(led.led_thinking).await;
-        if state.music.take_native_started() {
+        if state.music.take_silent_reply() {
+            state.music.take_native_started();
             current.finish().await;
-            info!("原生内容开始播放，本轮对话结束");
+            info!("声音本身就是回答，本轮对话结束");
             speech.finish_dialog(turn_id).await?;
             return Ok(());
         }
@@ -1082,7 +1084,8 @@ async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
             first_piece = piece;
         }
     }
-    let native = state.music.take_native_started();
+    let native = state.music.take_silent_reply();
+    state.music.take_native_started();
     match reply {
         Ok(reply) => {
             if aloud && !native && !reply.text.contains(IGNORE_MARK) {

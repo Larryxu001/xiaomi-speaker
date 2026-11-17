@@ -987,10 +987,14 @@ async def _play_url(song_id: str) -> str:
             return await _qq_url(src, item_id.partition("|")[0])
         if src["kind"] == "netease":
             # /song/url/v1 is refused (-460 "risky network") for a data-center
-            # IP without login; the older /song/url still works.
+            # IP without login; the older /song/url still works. Trying the
+            # refused one first cost a round trip (about 0.7 s) on every
+            # single song, so it is only tried when a login could make it work.
             found = {}
-            for path in (f"/song/url/v1?{urlencode({'id': item_id, 'level': 'standard'})}",
-                         f"/song/url?{urlencode({'id': item_id, 'br': 320000})}"):
+            paths = [f"/song/url?{urlencode({'id': item_id, 'br': 320000})}"]
+            if (cfg.get("cookie") or "").strip():
+                paths.insert(0, f"/song/url/v1?{urlencode({'id': item_id, 'level': 'standard'})}")
+            for path in paths:
                 try:
                     data = await _json(client, cfg["base_url"] + path, _netease_headers(cfg))
                 except MusicError:

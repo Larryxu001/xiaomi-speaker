@@ -58,6 +58,8 @@ pub struct MusicService {
     last_note: Mutex<Option<String>>,
     /// Native content just started in this turn: the reply stays silent.
     native_started: std::sync::atomic::AtomicBool,
+    /// This turn已经用声音本身回答了（换了一首歌、换了台）：不再多说一句。
+    silent_reply: std::sync::atomic::AtomicBool,
     /// Music is turned down while the mic stays open after a command.
     listening_duck: std::sync::atomic::AtomicBool,
 }
@@ -72,6 +74,7 @@ impl MusicService {
             netease_cookie: Mutex::new(None),
             last_note: Mutex::new(None),
             native_started: std::sync::atomic::AtomicBool::new(false),
+            silent_reply: std::sync::atomic::AtomicBool::new(false),
             listening_duck: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -153,6 +156,7 @@ impl MusicService {
         }
         // It plays right away; the turn ends without a spoken reply.
         self.native_started.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.silent_reply.store(true, std::sync::atomic::Ordering::SeqCst);
         mark_native_playing(true);
         let title = said
             .lines()
@@ -184,6 +188,20 @@ impl MusicService {
 
     pub fn native_started(&self) -> bool {
         self.native_started.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The new track is the answer: a spoken line would only arrive after the
+    /// music has already started and duck it.
+    fn answered_with_sound(&self) {
+        self.silent_reply.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn silent_reply(&self) -> bool {
+        self.silent_reply.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn take_silent_reply(&self) -> bool {
+        self.silent_reply.swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn take_native_started(&self) -> bool {
@@ -365,7 +383,10 @@ impl MusicService {
             self.refill_queue().await;
         }
         match self.play_next_from_queue().await {
-            Ok(item) => json!({"playing": true, "song": item.song}),
+            Ok(item) => {
+                self.answered_with_sound();
+                json!({"playing": true, "song": item.song})
+            }
             Err(err) => json!({"error": err.to_string()}),
         }
     }
@@ -376,7 +397,10 @@ impl MusicService {
             return json!({"playing": true});
         }
         match self.play_previous_from_history().await {
-            Ok(item) => json!({"playing": true, "song": item.song}),
+            Ok(item) => {
+                self.answered_with_sound();
+                json!({"playing": true, "song": item.song})
+            }
             Err(err) => json!({"error": err.to_string()}),
         }
     }
