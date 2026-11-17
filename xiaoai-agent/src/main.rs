@@ -857,6 +857,7 @@ impl Playback {
         let task = tokio::spawn(async move {
             let mut stream: Option<(String, JoinHandle<()>)> = None;
             let mut pending = String::new();
+            let mut spoken_pieces = 0_u32;
             let client = http_client();
             let base = console.base_url.trim_end_matches('/').to_string();
             while let Some(piece) = pieces.recv().await {
@@ -903,6 +904,7 @@ impl Playback {
                         continue;
                     }
                     let piece = std::mem::take(&mut pending);
+                    spoken_pieces += 1;
                     let spoken = if voice_is_native() { device.speak_native(&piece).await } else { device.speak(&piece).await };
                     if let Err(err) = spoken {
                         if flag.load(Ordering::Relaxed) {
@@ -914,7 +916,17 @@ impl Playback {
                 }
             }
             if !pending.trim().is_empty() && flag.load(Ordering::Relaxed) {
-                let _ = device.speak(&pending).await; // last sentence without a full stop
+                spoken_pieces += 1;
+                // The rest of the reply, said in one go.
+                let _ = if voice_is_native() {
+                    device.speak_native(&pending).await
+                } else {
+                    device.speak(&pending).await
+                };
+            }
+            if spoken_pieces > 1 {
+                // Each piece is a separate synthesis with a gap before it.
+                info!("这次回答分 {spoken_pieces} 段念出来");
             }
             if let Some((sid, player)) = stream {
                 if !sid.is_empty() {
