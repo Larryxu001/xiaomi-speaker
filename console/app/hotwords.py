@@ -38,15 +38,16 @@ def build(settings: dict[str, str] | None = None) -> str:
             if 1 < len(w) <= 20 and w not in words:
                 words.append(w)
 
+    # Only from things the user edits by hand. Anything that moves on its
+    # own (what was played last, how often) would change this list after
+    # every song, and the speaker restarts whenever its config changes.
     from . import shortcuts
     add(s["say"] for s in shortcuts.load(settings))
     with get_conn() as conn:
-        add(r[0] for r in conn.execute("SELECT name FROM radio_favorites ORDER BY added_at DESC LIMIT 10"))
-        add(r[0] for r in conn.execute(
-            "SELECT name FROM radio_history ORDER BY plays DESC, last_played DESC LIMIT 10"))
-        add(r[0] for r in conn.execute("SELECT name FROM tasks WHERE enabled = 1"))
-        add(r[0] for r in conn.execute("SELECT name FROM sources ORDER BY id DESC LIMIT 12"))
-        add(r[0] for r in conn.execute("SELECT name FROM model_profiles"))
+        add(r[0] for r in conn.execute("SELECT name FROM radio_favorites ORDER BY station_id"))
+        add(r[0] for r in conn.execute("SELECT name FROM tasks ORDER BY id"))
+        add(r[0] for r in conn.execute("SELECT name FROM sources ORDER BY id"))
+        add(r[0] for r in conn.execute("SELECT name FROM model_profiles ORDER BY id"))
     out: list[str] = []
     for w in words:
         if sum(len(x) + 1 for x in out) + len(w) > LIMIT:
