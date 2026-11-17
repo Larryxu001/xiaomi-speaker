@@ -556,9 +556,17 @@ impl MusicService {
     }
 
     pub async fn status(&self) -> Value {
+        // The firmware's own player is the other half of the speaker's sound:
+        // an alarm, a native morning routine, an album pushed from Xiaomi's
+        // cloud, or content we handed to a native service. Reporting only our
+        // own player made the model answer "nothing is playing" while the room
+        // was full of sound, so it never stopped it.
+        let native = native_status().await == Some(1);
         let state = self.state.lock().await;
         json!({
-            "playing": state.current.is_some(),
+            "playing": state.current.is_some() || native,
+            "our_player": state.current.is_some(),
+            "native_playing": native,
             "paused": state.paused,
             "interrupted": state.interruption.is_some(),
             "current": state.current.as_ref().map(|item| &item.song),

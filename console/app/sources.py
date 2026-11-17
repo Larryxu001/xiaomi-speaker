@@ -154,6 +154,12 @@ def _text_of(markup: str) -> str:
     return re.sub(r"\n\s*\n+", "\n", text).strip()
 
 
+# Anything whose bytes are not text would come out of the speaker as noise.
+NOT_A_PAGE = re.compile(r"(?i)\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|mp4|m4v|webm|mov|"
+                        r"mp3|m4a|aac|wav|ogg|flac|zip|gz|tar|rar|7z|pdf|apk|exe|dmg|"
+                        r"css|js|mjs|woff2?|ttf|otf|eot)(?:[?#]|$)")
+
+
 async def _get(client: httpx.AsyncClient, url: str) -> str:
     try:
         resp = await client.get(url, headers={"User-Agent": UA}, follow_redirects=True)
@@ -161,6 +167,14 @@ async def _get(client: httpx.AsyncClient, url: str) -> str:
         raise SourceError(f"连不上：{exc.__class__.__name__}")
     if resp.status_code >= 400:
         raise SourceError(f"对方返回 HTTP {resp.status_code}")
+    # A page that answers with an image, a stylesheet or an archive has no
+    # article in it; decoding it would hand the speaker a screenful of bytes
+    # to read out. Refuse it here, where every fetch passes.
+    kind = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if kind and not (kind.startswith("text/") or kind in (
+            "application/xhtml+xml", "application/xml", "application/rss+xml",
+            "application/atom+xml", "application/json", "application/javascript")):
+        raise SourceError(f"这个地址返回的不是网页（{kind}）")
     return resp.content[:MAX_BYTES].decode(resp.encoding or "utf-8", errors="replace")
 
 
@@ -212,6 +226,10 @@ def _nearest_link(page: str, keyword: str, base_url: str) -> str | None:
     for m in re.finditer(r"""(?:href=["']|"(?:url|link|href)"\s*:\s*")([^"'<>\s]+)""", window):
         link = m.group(1).replace("\\/", "/")
         if link.startswith("#") or link.startswith("javascript"):
+            continue
+        # The nearest link to the keyword is often a badge image or a
+        # stylesheet sitting next to the headline, not the article.
+        if NOT_A_PAGE.search(link):
             continue
         d = abs(m.start() - (idx - max(0, idx - 4000)))
         if best_d is None or d < best_d:

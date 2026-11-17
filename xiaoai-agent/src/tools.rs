@@ -568,7 +568,7 @@ music_tool!(
     GetMusicStatus,
     EmptyArgs,
     "get_music_status",
-    "查询当前是否正在播放音乐，以及当前歌曲信息。",
+    "查询音箱现在是否在出声，以及当前歌曲信息。native_playing 为真表示在放的是闹钟、原生早报或喜马拉雅这类不是我们放的内容，用户要停就照样调用停止播放工具。",
     json!({}),
     |music: Arc<MusicService>, _args: EmptyArgs| async move { music.status().await }
 );
