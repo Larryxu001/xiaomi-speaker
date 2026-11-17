@@ -786,6 +786,30 @@ def _vary_for_singer(q: str, results: list[dict]) -> list[dict]:
     return [lead] + rest
 
 
+def prefetch_urls(songs: list[dict]) -> None:
+    """Resolve stream links in the background, so the next request is instant.
+    Failures are ignored: the real request will report them properly."""
+    import asyncio
+
+    async def one(song_id: str) -> None:
+        try:
+            # _play_url, not play_url: resolving a link is not playing it,
+            # and must not count towards "do not repeat what was just played".
+            await _play_url(song_id)
+        except Exception:  # provider hiccup; the real call will say why
+            pass
+
+    todo = [s["id"] for s in songs if not (_cache.get(s["id"]) or {}).get("_url")]
+    if not todo:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    for song_id in todo:
+        loop.create_task(one(song_id))
+
+
 async def random_songs(limit: int = 10) -> list[dict]:
     async with httpx.AsyncClient(timeout=8) as client:
         for src in list_sources(enabled_only=True):

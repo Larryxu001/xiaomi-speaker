@@ -823,6 +823,43 @@ impl MusicService {
         }
     }
 
+    /// Resolves the next track's stream URL while the current one plays, so
+    /// "下一首" starts at once instead of waiting about 1.4 s for the music
+    /// service to hand out a link. Runs forever.
+    pub async fn prefetch_next_url(self: std::sync::Arc<Self>) {
+        if self.config.music.provider != "console" {
+            return;
+        }
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let (playing, empty) = {
+                let state = self.state.lock().await;
+                (state.current.is_some() && !state.paused, state.queue.is_empty())
+            };
+            if !playing {
+                continue;
+            }
+            // Line up what comes next before it is asked for.
+            if empty {
+                self.refill_queue().await;
+            }
+            let next = {
+                let state = self.state.lock().await;
+                state.queue.first().filter(|i| i.url.is_empty()).map(|i| i.song.id.clone())
+            };
+            let Some(id) = next else { continue };
+            if let Ok(url) = self.song_url(&id).await {
+                let mut state = self.state.lock().await;
+                if let Some(item) = state.queue.first_mut() {
+                    if item.song.id == id && item.url.is_empty() {
+                        item.url = url;
+                        tracing::debug!("已预取下一首的播放地址：{}", item.song.name);
+                    }
+                }
+            }
+        }
+    }
+
     /// Tells the console what is playing (for its player bar): on every
     /// change, and every 30 s so a restarted console catches up.
     pub async fn report_now_playing(self: std::sync::Arc<Self>) {

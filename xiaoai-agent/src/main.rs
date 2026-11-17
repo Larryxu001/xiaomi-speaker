@@ -156,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(music.clone().watch_track_end());
     tokio::spawn(music.clone().run_console_commands());
     tokio::spawn(music.clone().report_now_playing());
+    tokio::spawn(music.clone().prefetch_next_url());
     let airplay = AirPlayService::start(config.airplay.clone()).await?;
     let agent = Arc::new(AgentRuntime::new(config.clone(), device.clone(), music.clone()).await?);
 

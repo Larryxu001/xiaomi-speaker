@@ -13,7 +13,7 @@ import json
 
 import yaml
 
-from . import shortcuts
+from . import hotwords, shortcuts
 
 from .providers import search_ready
 from .services import list_mcp_servers
@@ -70,7 +70,7 @@ asr:
     api_key: @@ASR_API_KEY@@
     model: @@ASR_MODEL@@
     language: zh
-    prompt: ""
+    prompt: @@ASR_PROMPT@@
     timeout_s: @@ASR_TIMEOUT@@
     retries: @@ASR_RETRIES@@
   openai_realtime:
@@ -235,6 +235,9 @@ def render_agent_yaml(settings: dict[str, str], console_url: str = "") -> str:
         # Recognition normally answers in about a second. With a backup,
         # switch early; with none, still fail fast and ask the user to repeat
         # rather than leaving them waiting in silence for a retry.
+        # Words the recogniser should expect, so short commands and the
+        # names this household uses are not turned into something similar.
+        "@@ASR_PROMPT@@": _yaml_str(hotwords.build(settings)),
         "@@ASR_TIMEOUT@@": "4" if asr_fallbacks(settings) else "6",
         "@@ASR_RETRIES@@": "0",
         "@@LLM_FALLBACKS@@": json.dumps(llm_fallbacks(settings), ensure_ascii=False),

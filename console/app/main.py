@@ -1215,7 +1215,11 @@ async def device_music(request: Request, action: str, q: str = "", limit: int = 
         return JSONResponse({"error": "forbidden"}, status_code=403)
     try:
         if action == "search":
-            return JSONResponse(await music.search(q, limit))
+            found = await music.search(q, limit)
+            # The speaker asks for the winner's stream link a moment later;
+            # resolving it now (about 1.4 s) means it is ready by then.
+            music.prefetch_urls(found[:2])
+            return JSONResponse(found)
         if action == "random":
             return JSONResponse(await music.random_songs(limit))
         if action == "radio":
