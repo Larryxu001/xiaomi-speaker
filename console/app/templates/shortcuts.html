@@ -43,10 +43,11 @@
   </div>
 </form>
 
-<h2 class="section-title">音箱自带的指令</h2>
+<h2 class="section-title">音箱本来就会的事</h2>
+<p class="muted" style="margin:-8px 0 12px">下面的说法只是例子。音箱每句话都交给大模型判断，所以你怎么说都行，不用背固定句式。</p>
 <section class="panel">
   <table class="table">
-    <thead><tr><th>你说</th><th>效果</th></tr></thead>
+    <thead><tr><th>比如你说</th><th>效果</th></tr></thead>
     <tbody>
       {% for say, what in built_in %}<tr><td><strong>{{ say }}</strong></td><td class="muted">{{ what }}</td></tr>{% endfor %}
     </tbody>

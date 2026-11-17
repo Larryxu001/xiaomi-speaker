@@ -614,36 +614,10 @@ async fn run_session(
             state.agent.reset_session("agent ended conversation").await;
             return Ok(());
         }
-        // Everyday one-liners (volume, next, lights, time) skip the model:
-        // done right away, one short word back, conversation over.
-        if let Some(fast) = fast_intent(command, state.music.has_track().await) {
-            if let Some(previous) = playback.take() {
-                previous.playing.store(false, Ordering::Relaxed);
-                state.device.abort_current_output().await;
-            }
-            let said = run_fast(&state, &fast).await;
-            info!("快速指令 {fast:?} → {said}（识别 {asr_secs:.1} 秒，执行 {:.1} 秒）", heard_at.elapsed().as_secs_f64() - asr_secs);
-            if !said.is_empty() {
-                let _ = state.device.speak(&said).await;
-            }
-            exchanged = true;
-            if !state.config.runtime.follow_up {
-                speech.finish_dialog(turn_id).await?;
-                state.agent.reset_session("fast command").await;
-                return Ok(());
-            }
-            // Music comes back (quietly) and the mic stays open for the
-            // usual follow-up window: "下一曲" again needs no wake word.
-            state.music.restore_after_interruption().await;
-            match open_followup(&state, &speech, turn_id, &mut followup_rx, session_idle).await? {
-                Some((next, window)) => {
-                    music_window = window;
-                    turn = next;
-                    continue;
-                }
-                None => return Ok(()),
-            }
-        }
+        // Everything else goes to the model: one decision maker, so any
+        // wording works and the behaviour is the same every time. Only the
+        // two safety actions (pause above, stop below) are decided here,
+        // because they must never wait for the network and never fail.
         if let Some(stop_music) = exit_intent(command) {
             if let Some(previous) = playback.take() {
                 previous.playing.store(false, Ordering::Relaxed);
@@ -693,8 +667,19 @@ async fn run_session(
             Err(err) => {
                 current.finish().await;
                 error!("大模型调用失败：{err:?}");
-                speak_service_error(&state.device, led, LLM_SERVICE_ERROR_PROMPT).await;
-                return Err(err.context("LLM failed after retries"));
+                // The model is the only decision maker, so when it cannot be
+                // reached the speaker still obeys the handful of commands
+                // that work without it (volume, skip, lights, the time).
+                if let Some(fast) = fast_intent(command, state.music.has_track().await) {
+                    let said = run_fast(&state, &fast).await;
+                    info!("大模型连不上，本地执行 {fast:?} → {said}");
+                    let _ = state.device.speak(if said.is_empty() { "好的" } else { &said }).await;
+                } else {
+                    speak_service_error(&state.device, led, LLM_SERVICE_ERROR_PROMPT).await;
+                }
+                speech.finish_dialog(turn_id).await?;
+                state.agent.reset_session("llm unavailable").await;
+                return Ok(());
             }
         };
         info!(
@@ -1082,13 +1067,6 @@ async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
         let result = if resume { state.music.resume().await } else { state.music.pause().await };
         return format!("{notes}{}：{result}", if resume { "继续播放" } else { "暂停播放" });
     }
-    if let Some(fast) = fast_intent(command, state.music.has_track().await) {
-        let said = run_fast(state, &fast).await;
-        if aloud && !said.is_empty() {
-            let _ = state.device.speak(&said).await;
-        }
-        return format!("{notes}快速指令 {fast:?} → {said}（执行 {:.1} 秒）", started.elapsed().as_secs_f64());
-    }
     if let Some(stop_music) = exit_intent(command) {
         if stop_music {
             state.music.stop().await;
@@ -1117,7 +1095,16 @@ async fn handle_text(state: &TurnState, text: &str, aloud: bool) -> String {
                 if native { "，原生内容已开播" } else { "" }
             )
         }
-        Err(err) => format!("{notes}大模型调用失败：{err}"),
+        Err(err) => {
+            // Same safety net as the voice path.
+            match fast_intent(command, state.music.has_track().await) {
+                Some(fast) => {
+                    let said = run_fast(state, &fast).await;
+                    format!("{notes}大模型连不上，本地执行 {fast:?} → {said}")
+                }
+                None => format!("{notes}大模型调用失败：{err}"),
+            }
+        }
     }
 }
 
@@ -1281,12 +1268,33 @@ fn pause_intent(text: &str) -> Option<bool> {
 /// Whether an utterance only means "stop / that's all" (returns whether music
 /// should stop too). Fillers and punctuation are ignored; anything longer is
 /// left to the model.
+/// The panic button. It runs before the model, so it is generous about
+/// wording: "stopped when I did not mean it" is a small annoyance, "would
+/// not stop" is what makes the speaker unusable.
 fn exit_intent(text: &str) -> Option<bool> {
     let core: String = text
         .chars()
         .filter(|c| c.is_alphanumeric() && !"啊嗯哦呃哎呀吧了的嘛呢哈好".contains(*c))
         .collect();
-    if core.is_empty() || core.chars().count() > 10 {
+    if core.is_empty() {
+        return None;
+    }
+    // "别停" "继续" mean the opposite; leave those to the model.
+    if ["不要停", "别停", "不用停", "继续", "接着", "不要关", "别关"].iter().any(|w| core.contains(w)) {
+        return None;
+    }
+    // Said in frustration: "关闭你听不懂吗", "我要让你停止说了多少遍".
+    let demand = ["停止", "停下", "停掉", "别放", "别念", "别播", "别说", "闭嘴", "安静",
+                  "关掉", "关闭", "不要放", "不要播", "不要念", "不想听", "别唱"];
+    let hits: usize = demand.iter().map(|w| core.matches(w).count()).sum();
+    let tail: String = core.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
+    // Short sentence: any such word is the command. Long one (said in
+    // frustration): only when it ends on it or keeps repeating it, so a
+    // question that merely mentions stopping is left to the model.
+    if hits > 0 && (core.chars().count() <= 24 || hits >= 2 || demand.iter().any(|w| tail.contains(w))) {
+        return Some(true);
+    }
+    if core.chars().count() > 10 {
         return None;
     }
     // "停止播放音乐" "关掉电台" "别放了": stop the music, not just pause it.
@@ -1324,6 +1332,27 @@ mod exit_tests {
         assert_eq!(super::pause_intent("暂停。"), Some(false));
         assert_eq!(super::pause_intent("继续播放吧"), Some(true));
         assert_eq!(super::pause_intent("暂停一下把音量调小"), None);
+    }
+
+    #[test]
+    fn stop_wins_however_it_is_said() {
+        // What the user actually said this morning, word for word.
+        for say in [
+            "关闭？你听不懂吗？",
+            "你为什么听不到我的意思？我要让你停止，说了多少遍了？停止！停止！停止！",
+            "别念了",
+            "安静一点",
+            "闭嘴",
+            "我不想听这个了",
+            "能不能别放了",
+            "把这个关掉",
+        ] {
+            assert_eq!(exit_intent(say), Some(true), "{say}");
+        }
+        // The opposite, and ordinary sentences that merely contain the word.
+        for say in ["别停", "不要停下来", "继续播放", "停车场在哪里", "放首歌"] {
+            assert_eq!(exit_intent(say), None, "{say}");
+        }
     }
 }
 

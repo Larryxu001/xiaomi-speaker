@@ -898,11 +898,6 @@ impl MusicService {
         }
     }
 
-    /// Anything audible at all, ours or the firmware's.
-    pub async fn anything_sounding(&self) -> bool {
-        self.is_active().await || native_status().await == Some(1)
-    }
-
     /// Drops announcements the console has queued but not delivered, so
     /// stopping a briefing does not just move on to the next section.
     pub async fn cancel_announcements(&self) {

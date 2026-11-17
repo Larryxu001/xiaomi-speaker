@@ -10,18 +10,21 @@ import json
 
 from .db import get_settings, set_settings
 
-# Built in to the speaker (not editable): what they do, for the panel.
+# What the speaker can do without a shortcut. These are not fixed phrasings:
+# every sentence goes to the model, so any natural wording works. The words
+# below are examples, shown so the user knows what is possible.
 BUILT_IN = [
-    ("小爱同学", "唤醒音箱，开始一次对话。"),
-    ("停止 / 关闭 / 退出", "立刻结束对话并停止正在放的音乐或电台，不再继续听。"),
-    ("停止播放 / 关掉电台 / 别放了", "停止音乐或电台。"),
+    ("小爱同学", "唤醒音箱。每条指令都从这句开始；说完它会先把正在放的东西停下来再听你说。"),
+    ("停止 / 关掉 / 别放了 / 安静", "立刻停掉正在放的一切——音乐、电台、故事、播报，不管是谁放的。怎么说都行。"),
+    ("我不想听这个了 / 你听不懂吗，停止", "同上。说得再长、再着急也能停。"),
     ("暂停 / 暂停播放", "暂停音乐或电台，结束对话。"),
     ("继续 / 继续播放", "从暂停的地方接着放。"),
-    ("下一首 / 换一首 / 换一台", "切到下一首歌，放电台时换到下一个台。"),
+    ("下一首 / 换一个 / 切歌 / 跳过 / 换个台", "换下一首歌或下一个电台。不用记固定说法。"),
     ("上一首", "回到刚才那首。"),
-    ("大点声 / 小点声 / 音量调到 60", "调音箱自己的音量。"),
+    ("大点声 / 小声一点 / 音量调到六十", "调音箱自己的音量。"),
     ("没有了 / 不用了 / 再见", "结束对话。"),
     ("你会做什么", "听一遍音箱能做的事。"),
+    ("放首歌 / 来点轻音乐 / 放个电台 / 讲个故事", "放音乐、网络电台，或交给小爱原生服务放有声内容。"),
 ]
 
 EXAMPLES = [

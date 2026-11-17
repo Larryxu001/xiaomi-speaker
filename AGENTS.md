@@ -99,6 +99,28 @@ future shell cannot find a bare `arm-linux-gnueabihf-gcc`, inspect the existing
 Rust target/build setup and the `cargo-zigbuild` glibc 2.25 path before rewriting
 the toolchain assumptions.
 
+## One Decision Maker
+
+Every heard sentence goes to the model. There is no second matcher that
+pre-empts it, because two decision makers made behaviour unpredictable: the
+same intent took a different path depending on the exact words, and users
+could not tell which. Do not reintroduce a keyword fast path for ordinary
+commands, however tempting the few hundred milliseconds look.
+
+Two exceptions, both in `run_session` and mirrored in `handle_text`:
+
+- `exit_intent` / `pause_intent` run first. Stopping is a safety action: it
+  must not wait for the network and must not fail, and stopping when the user
+  did not mean it is a small annoyance next to refusing to stop. `exit_intent`
+  is therefore deliberately generous about wording.
+- `fast_intent` / `run_fast` are the offline fallback. They run only after the
+  model call fails, so volume, skip, lights and the time still work when the
+  model cannot be reached. They never run before the model.
+
+`MusicService::stop` is unconditional on purpose: it stops our player, the
+firmware's player and any announcement, whoever started the sound. The agent
+is not the only thing that can make the speaker talk.
+
 ## Runtime Safety
 
 - Avoid NAND writes on the speaker whenever possible; prefer `/tmp` for logs,
