@@ -401,14 +401,21 @@ async def uninstall_app(app: str) -> str:
 
 
 def build_mcp_app(allowed_hosts: list[str]):
-    """Streamable HTTP endpoint, stateless JSON so short polls never hang."""
+    """Streamable HTTP endpoint, stateless JSON so short polls never hang.
+
+    The Host check only understands exact names and "name:*", so "*" means
+    "any address" here and has to turn the check off rather than be passed
+    through as a host name. Only the speaker reaches this endpoint anyway:
+    DeviceTokenAuth rejects every request without the device token.
+    """
+    any_host = "*" in allowed_hosts
     return mcp.streamable_http_app(
         streamable_http_path="/",
         stateless_http=True,
         json_response=True,
         transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=allowed_hosts,
+            enable_dns_rebinding_protection=not any_host,
+            allowed_hosts=[] if any_host else allowed_hosts,
             allowed_origins=[],
         ),
     )

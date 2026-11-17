@@ -47,8 +47,11 @@ SSH="ssh -o ConnectTimeout=10"
 say "连接音箱 $SPEAKER"
 $SSH "$SPEAKER" 'echo ok' >/dev/null 2>&1 || die "连不上音箱。先确认刷过补丁固件、SSH 能登录（ssh $SPEAKER）"
 
-ARCH=$($SSH "$SPEAKER" 'uname -m' 2>/dev/null || echo '?')
-case "$ARCH" in armv7*|armv6*|arm) ;; *) die "音箱的处理器是 $ARCH，这个版本只支持 ARMv7 的小爱音箱 Pro" ;; esac
+# The speaker runs a 64-bit kernel over a 32-bit armhf userland, so `uname -m`
+# says aarch64 while every binary must be ARMv7 hard-float. Look for the
+# 32-bit loader instead; that is what the agent actually needs.
+$SSH "$SPEAKER" 'test -e /lib/ld-linux-armhf.so.3' \
+    || die "音箱上没有 32 位 ARM 运行库（/lib/ld-linux-armhf.so.3），这个版本只支持小爱音箱 Pro（OH2P）"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -95,10 +98,12 @@ scp -O -q "$WORK/console.env" "$SPEAKER":/data/open-xiaoai/console.env
 $SSH "$SPEAKER" 'chmod +x /data/open-xiaoai/xiaoai-agent /data/open-xiaoai/*.sh /data/init.sh; \
     chmod 600 /data/open-xiaoai/console.env'
 
+# /api/device/voice answers at once and checks the token; /api/device/command
+# long-polls for ~25 s, so it is not a health check.
 say "检查音箱能不能连上控制台"
 $SSH "$SPEAKER" ". /data/open-xiaoai/console.env; \
     curl -fsS -m 15 -o /dev/null -H \"X-Device-Token: \$XIAOAI_DEVICE_TOKEN\" \
-    \"\$XIAOAI_CONSOLE_URL/api/device/command\"" \
+    \"\$XIAOAI_CONSOLE_URL/api/device/voice\"" \
     || die "音箱连不上控制台。检查 --console 地址在音箱上能打开，以及 --token 是否复制完整"
 
 say "启动"
