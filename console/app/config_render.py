@@ -232,8 +232,11 @@ def render_agent_yaml(settings: dict[str, str], console_url: str = "") -> str:
         "@@BARGE_IN@@": "true" if settings.get("barge_in", "1") == "1" else "false",
         "@@ASR_FALLBACKS@@": json.dumps(asr_fallbacks(settings), ensure_ascii=False),
         # With another service to fall back on, give up on a slow one sooner.
-        "@@ASR_TIMEOUT@@": "4" if asr_fallbacks(settings) else "8",
-        "@@ASR_RETRIES@@": "0" if asr_fallbacks(settings) else "1",
+        # Recognition normally answers in about a second. With a backup,
+        # switch early; with none, still fail fast and ask the user to repeat
+        # rather than leaving them waiting in silence for a retry.
+        "@@ASR_TIMEOUT@@": "4" if asr_fallbacks(settings) else "6",
+        "@@ASR_RETRIES@@": "0",
         "@@LLM_FALLBACKS@@": json.dumps(llm_fallbacks(settings), ensure_ascii=False),
         "@@MUSIC_ENABLED@@": "true" if (console_url and any_enabled()) else "false",
         "@@CONSOLE_URL@@": _yaml_str(console_url.rstrip("/")),
