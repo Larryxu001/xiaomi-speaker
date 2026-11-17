@@ -2,7 +2,7 @@
 
 控制台「应用」页和语音指令「小爱同学，安装……」能装的软件，都来自这里。
 每个应用是一个文件夹，名字就是应用 ID，也是它的网址前缀
-（例如 `navidrome/` → `https://navidrome.speaker.xulangli.com.cn`）。
+（例如 `navidrome/` → 控制台地址下的 `/apps/navidrome/`）。
 
 一个应用包含两个文件：
 

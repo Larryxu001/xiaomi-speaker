@@ -24,7 +24,7 @@ docker compose up --build
    ```
 2. 在能 SSH 到音箱的机器上执行（把地址换成控制台实际能访问到的地址）：
    ```bash
-   XIAOAI_CONSOLE_URL=https://xiaomi.speaker.xulangli.com.cn \
+   XIAOAI_CONSOLE_URL=https://console.example.com \
    XIAOAI_DEVICE_TOKEN=<上一步取出的值> \
    deploy/push-console-poller.sh
    ```
@@ -36,7 +36,7 @@ docker compose up --build
 HTTPS）。最省事的是 [Caddy](https://caddyserver.com/)，自动签证书：
 
 ```caddyfile
-xiaomi.speaker.xulangli.com.cn {
+console.example.com {
     reverse_proxy 127.0.0.1:8088
 }
 ```
@@ -44,7 +44,7 @@ xiaomi.speaker.xulangli.com.cn {
 步骤：
 1. 把 `console/` 目录传到服务器（`git clone` 或 `rsync` 都可以）。
 2. `docker compose up -d --build`。
-3. 配置好 Caddy/nginx 把 `xiaomi.speaker.xulangli.com.cn` 转发到 `127.0.0.1:8088`，
+3. 配置好 Caddy/nginx 把 `console.example.com` 转发到 `127.0.0.1:8088`，
    确认 DNS 已经指向这台服务器，安全组放开 80/443。
 4. 按上面"让音箱连上它"那一步，把音箱指向这个域名。
 

@@ -1,5 +1,16 @@
 {% extends "base.html" %}
-{% block title %}概览 · 小米音箱控制台{% endblock %}
+{% block title %}概览 · 小米音箱控制台<script>
+  (function () {
+    var b = document.getElementById('copy-cmd'), box = document.getElementById('setup-cmd');
+    if (!b || !box) return;
+    b.addEventListener('click', function () {
+      navigator.clipboard.writeText(box.textContent.trim()).then(function () {
+        b.textContent = '已复制'; setTimeout(function () { b.textContent = '复制命令'; }, 1500);
+      }, function () { b.textContent = '复制失败，请手动选中'; });
+    });
+  })();
+</script>
+{% endblock %}
 {% block content %}
 <section class="panel" aria-label="音箱状态">
   <div class="device">
@@ -29,6 +40,23 @@
     <div><dt>语音识别</dt><dd title="{{ s.asr_model }}">{{ (s.asr_model or '未设置').split('/')[-1] }}</dd></div>
     <div><dt>定时任务</dt><dd><a href="/tasks">{{ task_count }} 个启用中</a></dd></div>
   </dl>
+</section>
+
+<section class="panel" style="margin-top:20px">
+  <div class="panel-head">
+    <h2>接入音箱</h2>
+    <span class="muted" style="font-size:13px">{% if status and status.last_seen_at %}已经接上了，换一台或重装时再用{% else %}还没有音箱连上来{% endif %}</span>
+  </div>
+  <details class="panel-body" {% if not (status and status.last_seen_at) %}open{% endif %}>
+    <summary style="cursor:pointer">怎么把音箱连到这个控制台</summary>
+    <p class="muted" style="margin:12px 0 6px">刷好补丁固件、能 SSH 登录音箱之后，在你自己的电脑上跑这一条命令（把地址换成音箱的 IP）：</p>
+    <pre class="copybox" id="setup-cmd">curl -fsSL https://raw.githubusercontent.com/Larryxu001/xiaomi-speaker/main/deploy/install.sh | sh -s -- \
+  --speaker root@192.168.1.100 \
+  --console {{ console_url }} \
+  --token {{ device_token }}</pre>
+    <div class="actions" style="margin-top:10px"><button type="button" class="btn-secondary" id="copy-cmd">复制命令</button></div>
+    <p class="hint" style="margin-top:12px">这台控制台的设备令牌：<code>{{ device_token }}</code>　音箱靠它来认你，别发给别人。</p>
+  </details>
 </section>
 
 {% if problems %}

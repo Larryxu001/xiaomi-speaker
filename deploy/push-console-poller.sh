@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 HOST=${XIAOAI_SSH_HOST:-xiaoai}
-: "${XIAOAI_CONSOLE_URL:?set XIAOAI_CONSOLE_URL to the console base URL, e.g. https://xiaomi.speaker.xulangli.com.cn}"
+: "${XIAOAI_CONSOLE_URL:?set XIAOAI_CONSOLE_URL to the console base URL, e.g. https://console.example.com}"
 : "${XIAOAI_DEVICE_TOKEN:?set XIAOAI_DEVICE_TOKEN to the device_token shown in the console (first run)}"
 
 tmp_env=$(mktemp)

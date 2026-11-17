@@ -579,3 +579,11 @@ body.has-nowbar .main { padding-bottom: 88px; }
 .nb-vol button { min-width: 36px; font-size: 18px; }
 #nb-vol { font-size: 12px; color: var(--muted); min-width: 52px; text-align: center; }
 @media (max-width: 600px) { #nb-vol { display: none; } .nb-vol { margin-left: 2px; padding-left: 4px; } }
+
+/* a command the user copies */
+.copybox {
+  margin: 0; padding: 12px 14px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  line-height: 1.7; white-space: pre-wrap; word-break: break-all; overflow-x: auto;
+}

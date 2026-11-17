@@ -55,8 +55,11 @@ ideas.init()
 speed.init()
 
 # Hosts the console's MCP endpoint answers to (DNS-rebinding protection).
+# The default has no site-specific name in it, so a fresh copy of this
+# project works on whatever address its owner puts it behind; set
+# CONSOLE_ALLOWED_HOSTS to your own domain to lock it down.
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get(
-    "CONSOLE_ALLOWED_HOSTS", "xiaomi.speaker.xulangli.com.cn,127.0.0.1:*,localhost:*,testserver"
+    "CONSOLE_ALLOWED_HOSTS", "*"
 ).split(",") if h.strip()]
 mcp_app = build_mcp_app(ALLOWED_HOSTS)
 
@@ -259,6 +262,10 @@ async def dashboard(request: Request):
             "recent": recent,
             "task_count": task_count,
             "problems": problems,
+            # Everything needed to connect a speaker, ready to copy: digging
+            # the token out of the database by hand stopped people cold.
+            "device_token": settings.get("device_token", ""),
+            "console_url": str(request.base_url).rstrip("/"),
             "speed": speed.summary(),
             "s": settings,
         },

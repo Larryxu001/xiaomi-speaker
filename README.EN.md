@@ -83,44 +83,38 @@ microphone -> firmware's native mipns (wake word, echo cancellation, noise reduc
 └── AGENTS.md              # engineering rules and invariants
 ```
 
-## Install
+## Install in four steps
 
-1. **Clone**
+1. **Flash the patched firmware.** The only awkward step: a cable, a flashing
+   tool and some risk. See [deploy/README.md](deploy/README.md).
+
+2. **Run a console** on any machine that stays on and that the speaker can reach:
 
    ```bash
    git clone https://github.com/Larryxu001/xiaomi-speaker.git
-   cd xiaomi-speaker
+   cd xiaomi-speaker/console && docker compose up -d
    ```
 
-2. **Flash the patched firmware.** Build the firmware with SSH and the `/data/init.sh` hook from this repository; see [deploy/README.md](deploy/README.md).
+   Open `http://that-machine:8088` and set an admin password.
 
-3. **Run the console**
+3. **Install on the speaker with one command.** The console's overview page
+   prints it with your address and token already filled in:
 
    ```bash
-   cd console
-   docker compose up --build
+   curl -fsSL https://raw.githubusercontent.com/Larryxu001/xiaomi-speaker/main/deploy/install.sh | sh -s -- \
+     --speaker root@192.168.1.100 \
+     --console https://your-console \
+     --token <device token from the console>
    ```
 
-   Open http://localhost:8088 and set an admin password. See [console/README.md](console/README.md) for deploying to a server.
+   It downloads the prebuilt binary, installs the scripts, writes the config,
+   starts everything and checks that it is running. Add `--binary <path>` to
+   use your own build when the machine cannot reach GitHub.
 
-4. **Build the agent.** Download it from [Releases](https://github.com/Larryxu001/xiaomi-speaker/releases), or cross-compile it:
+4. **Fill in the keys** on the console's Models & Keys page (DeepSeek is cheap
+   and fast). The speaker picks them up within about 20 seconds.
 
-   ```bash
-   rustup toolchain install 1.96.0
-   rustup target add armv7-unknown-linux-gnueabihf --toolchain 1.96.0
-   cargo install cargo-zigbuild && brew install zig
-   (cd xiaoai-agent && cargo +1.96.0 zigbuild --release --target armv7-unknown-linux-gnueabihf.2.25)
-   ```
-
-   Keep the `.2.25` suffix: the speaker runs glibc 2.25.
-
-5. **Install on the speaker.** Copy `xiaoai-agent`, `start-agent.sh`, `deploy/say.sh` and `deploy/home.sh` to `/data/open-xiaoai/`. Then connect the speaker to the console:
-
-   ```bash
-   XIAOAI_CONSOLE_URL=https://<console> XIAOAI_DEVICE_TOKEN=<token> deploy/push-console-poller.sh
-   ```
-
-   Start the agent with `/data/open-xiaoai/start-agent.sh start`, and add it to `/data/init.sh` for autostart. Fill in the ASR and LLM providers on the console's Models & Keys page.
+Say "小爱同学" and start using it.
 
 ## Disable / uninstall
 

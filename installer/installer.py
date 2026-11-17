@@ -41,12 +41,15 @@ APPS_HOME = Path(os.environ.get("INSTALLER_APPS_HOME", "/opt/xiaomi-speaker-apps
 RUN_DIR = Path(os.environ.get("INSTALLER_RUN_DIR", "/run/xiaomi-speaker-installer"))
 SOCKET = RUN_DIR / "installer.sock"
 SECRET_FILE = Path(os.environ.get("INSTALLER_SECRET_FILE", "/etc/xiaomi-speaker/installer.secret"))
-APP_DOMAIN = os.environ.get("INSTALLER_APP_DOMAIN", "speaker.xulangli.com.cn")
+# Set INSTALLER_APP_DOMAIN to your own domain to give each app its own
+# subdomain; empty means apps are served under the console's own address.
+APP_DOMAIN = os.environ.get("INSTALLER_APP_DOMAIN", "")
 NGINX_SITES = Path(os.environ.get("INSTALLER_NGINX_DIR", "/etc/nginx"))
 # Apps are served under the console's own address by default
 # (https://<console>/apps/<id>/), so installing one needs no DNS or new cert.
 # The console's nginx server block includes PATH_DIR/*.conf.
-CONSOLE_HOST = os.environ.get("INSTALLER_CONSOLE_HOST", f"xiaomi.{APP_DOMAIN}")
+# The address the console itself is reached at; apps are served under it.
+CONSOLE_HOST = os.environ.get("INSTALLER_CONSOLE_HOST") or (f"xiaomi.{APP_DOMAIN}" if APP_DOMAIN else "")
 PATH_DIR = NGINX_SITES / "xiaomi-speaker-apps"
 # Apps marked internal (only the console uses them) accept requests from the
 # server itself only; its calls to its own domain arrive from this address.
@@ -358,7 +361,12 @@ def install(app_id: str, params: dict, dry_run: bool, job: dict) -> dict:
     if free_gb - need_gb < 2:
         raise InstallError(f"硬盘不够：需要约 {need_gb}GB，可用 {free_gb:.1f}GB。")
 
-    env_lines = [f"APP_DATA={app_dir(app_id) / 'data'}", f"APP_MEMORY={limit_mb}m"]
+    # Apps that need to know their own public address (n8n, SearXNG) read
+    # these instead of carrying one household's domain in their compose file.
+    app_host = f"{app_id}.{APP_DOMAIN}" if APP_DOMAIN and meta.get("route") == "domain" else CONSOLE_HOST
+    app_url = f"https://{app_host}" + ("" if meta.get("route") == "domain" else f"/apps/{app_id}")
+    env_lines = [f"APP_DATA={app_dir(app_id) / 'data'}", f"APP_MEMORY={limit_mb}m",
+                 f"APP_HOST={app_host}", f"APP_URL={app_url}"]
     for p in meta.get("params") or []:
         key = p["key"]
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", key):
@@ -374,6 +382,9 @@ def install(app_id: str, params: dict, dry_run: bool, job: dict) -> dict:
 
     mcp_token = secrets.token_urlsafe(32) if meta.get("mcp_path") else None
     route = meta.get("route", "path") if meta.get("web_port") else None
+    if route and not CONSOLE_HOST:
+        raise InstallError("还不知道控制台的网址，没法给应用配置入口。"
+                           "请在安装器的环境变量里设置 INSTALLER_CONSOLE_HOST（例如 console.example.com）。")
     if route == "path":
         nginx_conf = _path_conf(app_id, meta, mcp_token)
         host = CONSOLE_HOST

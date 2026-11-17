@@ -7,7 +7,7 @@ icon: 🧩
 memory_mb: 256
 idle_mb: 100  # 平时实际占用，安装时按它判断内存够不够；memory_mb 是上限
 disk_gb: 1
-# 有网页时填容器映射到本机的端口，会自动得到 https://<文件夹名>.speaker.xulangli.com.cn
+# 有网页时填容器映射到本机的端口，安装器会把它挂到控制台地址下（/apps/<文件夹名>/）
 web_port: 18100
 # 应用自带 MCP 服务时填路径。安装后自动接到音箱，并用随机 Token 保护。
 mcp_path: /mcp
