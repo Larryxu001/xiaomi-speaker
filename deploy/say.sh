@@ -78,11 +78,51 @@ if [ "${1:-}" = "--native" ]; then native_only=1; shift; fi
 text=$1
 [ -n "$text" ] || exit 0
 
+# The firmware's text_to_speech service refuses anything much over 400
+# Chinese characters: measured on OH2P, 912 bytes was spoken in full and
+# 1200 bytes came back as "Failed to call text_to_speech" after half a
+# minute. It also exits 0 when that happens, and say.sh used to pass that
+# on, so console-poller.sh marked three whole morning briefings as read
+# while the room stayed silent. Long text is therefore spoken in
+# sentence-sized pieces, and a piece that does not come out is reported as
+# a failure so the announcement is not acknowledged as read.
+NATIVE_CHUNK_BYTES=600
+
+speak_chunk() {
+    [ -n "$1" ] || return 0
+    /usr/sbin/tts_play.sh --notify-pns "$1" >/tmp/xiaoai-say-chunk.log 2>&1
+    rc=$?
+    cat /tmp/xiaoai-say-chunk.log >>/tmp/xiaoai-say.log 2>/dev/null
+    # tts_play.sh exits 0 even when the service failed, so look at what it said.
+    grep -q "Failed to call text_to_speech" /tmp/xiaoai-say-chunk.log && return 1
+    return $rc
+}
+
 native() {
     pause_music
     hush_native
-    /usr/sbin/tts_play.sh --notify-pns "$text"
-    result=$?
+    result=0
+    if [ ${#text} -le $NATIVE_CHUNK_BYTES ]; then
+        speak_chunk "$text" || result=1
+    else
+        # BusyBox sed matches bytes, so a bracket expression would cut
+        # multibyte punctuation in half; match each mark as a whole string.
+        printf '%s' "$text" | sed -e 's/。/。\n/g' -e 's/！/！\n/g' \
+            -e 's/？/？\n/g' -e 's/；/；\n/g' -e 's/，/，\n/g' \
+            >/tmp/xiaoai-say-parts 2>/dev/null
+        buf=""
+        while IFS= read -r part; do
+            [ -n "$part" ] || continue
+            if [ -n "$buf" ] && [ $((${#buf} + ${#part})) -gt $NATIVE_CHUNK_BYTES ]; then
+                speak_chunk "$buf" || result=1
+                buf="$part"
+            else
+                buf="$buf$part"
+            fi
+        done < /tmp/xiaoai-say-parts
+        speak_chunk "$buf" || result=1
+        rm -f /tmp/xiaoai-say-parts
+    fi
     settle_native &
     resume_music
     exit $result

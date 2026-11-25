@@ -21,6 +21,7 @@ AGENT_HOME=${XIAOAI_AGENT_HOME:-/data/open-xiaoai}
 AGENT_CONFIG=$AGENT_HOME/agent.yaml
 AGENT_LOG=${XIAOAI_AGENT_LOG:-/tmp/xiaoai-agent.log}
 LOG_MAX_BYTES=1048576  # logs are in RAM: keep each under 1 MB
+ATTEMPT_MAX=3          # tries at speaking one announcement before moving on
 LAUNCHER=$AGENT_HOME/start-agent.sh
 STATE_DIR=/tmp/xiaoai-console-poller
 NEW_CONFIG=$STATE_DIR/agent.yaml.new
@@ -83,6 +84,23 @@ handle_announcement() {
     else
         /usr/sbin/tts_play.sh --notify-pns "$text" >/dev/null 2>&1
     fi
+    spoken=$?
+    # Acknowledging means "the listener heard this". Three morning briefings
+    # were acknowledged while the speaker stayed silent, because the ack was
+    # sent whatever happened. A failed one is retried on the next poll and,
+    # after ATTEMPT_MAX tries, acknowledged anyway with a line saying so, so
+    # one unspeakable text cannot block every announcement behind it.
+    tries_file=$STATE_DIR/tries.$ann_id
+    if [ "$spoken" != 0 ]; then
+        tries=$(( $(cat "$tries_file" 2>/dev/null || echo 0) + 1 ))
+        echo "$tries" > "$tries_file"
+        if [ "$tries" -lt "$ATTEMPT_MAX" ]; then
+            log "announcement #$ann_id was not spoken (attempt $tries); will retry"
+            return 0
+        fi
+        log "announcement #$ann_id could not be spoken after $tries attempts; giving up"
+    fi
+    rm -f "$tries_file"
     curl -s -m 10 -H "X-Device-Token: $DEVICE_TOKEN" -X POST "$CONSOLE_URL/api/device/announcement/$ann_id/ack" >/dev/null 2>&1
 }
 
