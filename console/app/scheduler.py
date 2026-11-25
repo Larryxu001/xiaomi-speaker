@@ -34,6 +34,11 @@ _WEEKDAY_SET = {0, 1, 2, 3, 4}  # Monday .. Friday
 
 def _is_due(task: dict, now: datetime) -> bool:
     """A task is due once per matching slot; last_run_at guards re-firing."""
+    # "Don't make a sound tomorrow morning" is one quiet morning, not the end
+    # of the task: skip_until keeps a task enabled and visible while holding
+    # it quiet up to and including that day.
+    if (task.get("skip_until") or "").strip() >= now.date().isoformat():
+        return False
     recurrence = task["recurrence"]
     last_run_at = task["last_run_at"]
 
@@ -339,6 +344,29 @@ async def _fire_task(task: dict, settings: dict[str, str], now: datetime) -> Non
 _radio_warmed = [0.0]
 
 
+_SELF_CHECK_AT = (7, 30)   # local time, after the morning briefings have run
+_self_checked_on = [""]
+
+
+async def _daily_self_check(now: datetime) -> None:
+    """Once a day, say out loud anything that is newly broken.
+
+    A problem shown only on a web page is a problem nobody sees: three daily
+    briefings sat disabled for five mornings before anyone noticed.
+    """
+    today = now.date().isoformat()
+    if _self_checked_on[0] == today or (now.hour, now.minute) < _SELF_CHECK_AT:
+        return
+    _self_checked_on[0] = today
+    try:
+        from . import health
+        line = health.announce_new_problems()
+        if line:
+            log.warning("self-check: %s", line)
+    except Exception:
+        log.exception("self-check failed")
+
+
 async def run_scheduler_forever() -> None:
     log.info("scheduler loop started (checking every %ss)", _CHECK_INTERVAL_S)
     while True:
@@ -359,6 +387,7 @@ async def run_scheduler_forever() -> None:
             if time.time() - _radio_warmed[0] > _radio.CACHE_S - 600:
                 _radio_warmed[0] = time.time()
                 asyncio.create_task(_radio.prewarm())
+            await _daily_self_check(now)
             for task in tasks:
                 if _is_due(task, now):
                     await _fire_task(task, settings, now)

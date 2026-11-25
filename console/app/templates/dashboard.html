@@ -1,17 +1,22 @@
 {% extends "base.html" %}
-{% block title %}概览 · 小米音箱控制台<script>
-  (function () {
-    var b = document.getElementById('copy-cmd'), box = document.getElementById('setup-cmd');
-    if (!b || !box) return;
-    b.addEventListener('click', function () {
-      navigator.clipboard.writeText(box.textContent.trim()).then(function () {
-        b.textContent = '已复制'; setTimeout(function () { b.textContent = '复制命令'; }, 1500);
-      }, function () { b.textContent = '复制失败，请手动选中'; });
-    });
-  })();
-</script>
-{% endblock %}
+{% block title %}概览 · 小米音箱控制台{% endblock %}
 {% block content %}
+{% if health %}
+<section class="panel" style="margin-top:0">
+  <div class="panel-head">
+    <h2>自检</h2>
+    <span class="muted" style="font-size:13px">每天早上七点半自动查一遍，新出的问题会念给你听</span>
+  </div>
+  <ul class="list">
+    {% for h in health %}
+    <li class="panel-body">
+      <span class="badge {% if h.level == '坏了' %}warn{% else %}off{% endif %}">{{ h.level }}</span>
+      {{ h.text }}　<span class="muted">{{ h.fix }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <section class="panel" aria-label="音箱状态">
   <div class="device">
     <div class="device-icon" aria-hidden="true">
@@ -113,4 +118,15 @@
   <p class="empty">还没有收到音箱的活动记录。音箱更新到新版本后，这里会显示它的运行日志。</p>
   {% endif %}
 </section>
+<script>
+  (function () {
+    var b = document.getElementById('copy-cmd'), box = document.getElementById('setup-cmd');
+    if (!b || !box) return;
+    b.addEventListener('click', function () {
+      navigator.clipboard.writeText(box.textContent.trim()).then(function () {
+        b.textContent = '已复制'; setTimeout(function () { b.textContent = '复制命令'; }, 1500);
+      }, function () { b.textContent = '复制失败，请手动选中'; });
+    });
+  })();
+</script>
 {% endblock %}

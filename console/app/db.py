@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     run_at TEXT NOT NULL,            -- 'HH:MM' for recurring, ISO datetime for 'once'
     weekday INTEGER,                 -- 0=Mon..6=Sun, only for 'weekly'
     payload TEXT NOT NULL DEFAULT '',-- announcement text, or news topic/prompt
+    skip_until TEXT NOT NULL DEFAULT '', -- local 'YYYY-MM-DD': stay quiet up to and including this day
     last_run_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -202,6 +203,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN source_ids TEXT NOT NULL DEFAULT ''")
         if "length" not in cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN length TEXT NOT NULL DEFAULT 'standard'")
+        if "skip_until" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN skip_until TEXT NOT NULL DEFAULT ''")
         conn.execute(
             "INSERT INTO device_status (id, last_seen_at, last_report) "
             "VALUES (1, NULL, NULL) ON CONFLICT(id) DO NOTHING"

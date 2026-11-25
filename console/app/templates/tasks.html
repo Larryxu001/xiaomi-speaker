@@ -112,6 +112,7 @@
         </td>
         <td class="sched">
           {{ fmt_schedule(t) }}
+          {% if t.skip_until %}<div class="payload"><span class="badge off">静音到 {{ t.skip_until }}</span></div>{% endif %}
           {% if t.last_run_at %}<div class="payload">上次 {{ t.last_run_at | fmt_time }}</div>{% endif %}
         </td>
         <td>

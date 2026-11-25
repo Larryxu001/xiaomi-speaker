@@ -326,6 +326,43 @@ async def set_task_enabled(task: str, enabled: bool) -> str:
     return f"已{'启用' if enabled else '停用'}「{t['name']}」。"
 
 
+@mcp.tool(
+    name="mute_tasks_until",
+    description="让定时播报安静到某一天（含那天），之后自动恢复。用户说「明天早上别吵我」「这周末别播」「我要睡觉，早上安静点」时用这个，不要用 set_task_enabled 永久停用。"
+                "until 填那天的日期（YYYY-MM-DD）；task 填任务名或关键词，留空表示所有播报。",
+)
+@_say
+async def mute_tasks_until(until: str, task: str = "") -> str:
+    from datetime import date
+    day = (until or "").strip()
+    try:
+        date.fromisoformat(day)
+    except ValueError:
+        return "日期要写成 2026-11-26 这样的格式。"
+    if (task or "").strip():
+        targets = [services.find_task(task)]
+    else:
+        targets = [t for t in services.list_tasks() if t["enabled"]]
+    if not targets:
+        return "现在没有启用的定时播报。"
+    for t in targets:
+        services.set_task_skip_until(t["id"], day)
+    names = "、".join(f"「{t['name']}」" for t in targets[:4])
+    return f"{names}安静到{day[5:].replace('-', '月')}日，之后自动恢复。"
+
+
+@mcp.tool(name="unmute_tasks", description="立刻恢复被暂时静音的定时播报。task 填任务名或关键词，留空表示全部。")
+@_say
+async def unmute_tasks(task: str = "") -> str:
+    targets = [services.find_task(task)] if (task or "").strip() else services.list_tasks()
+    woken = [t for t in targets if (t.get("skip_until") or "")]
+    for t in woken:
+        services.set_task_skip_until(t["id"], "")
+    if not woken:
+        return "没有被静音的播报。"
+    return "已恢复" + "、".join(f"「{t['name']}」" for t in woken[:4]) + "。"
+
+
 @mcp.tool(name="delete_task", description="删除某个定时任务。task 填任务名或任务内容里的关键词。")
 @_say
 async def delete_task(task: str) -> str:

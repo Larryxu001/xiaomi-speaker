@@ -119,7 +119,20 @@ def find_task(query: str) -> dict:
 
 def set_task_enabled(task_id: int, enabled: bool) -> None:
     with get_conn() as conn:
-        conn.execute("UPDATE tasks SET enabled = ? WHERE id = ?", (1 if enabled else 0, task_id))
+        conn.execute(
+            "UPDATE tasks SET enabled = ?, skip_until = CASE WHEN ? THEN '' ELSE skip_until END "
+            "WHERE id = ?",
+            (1 if enabled else 0, 1 if enabled else 0, task_id),
+        )
+        conn.commit()
+
+
+def set_task_skip_until(task_id: int, day: str) -> None:
+    """Hold one task quiet up to and including `day` ('YYYY-MM-DD'), or clear
+    the hold with an empty string. The task stays enabled, so it comes back
+    by itself and never disappears from the list without the user noticing."""
+    with get_conn() as conn:
+        conn.execute("UPDATE tasks SET skip_until = ? WHERE id = ?", ((day or "").strip(), task_id))
         conn.commit()
 
 

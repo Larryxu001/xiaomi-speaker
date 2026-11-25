@@ -36,7 +36,7 @@ from . import auth
 from .config_render import render_agent_yaml
 from .db import get_conn, get_settings, init_db, now_local, set_settings
 from .providers import ProviderError, list_models, test_asr, test_llm, test_search, web_search
-from . import apps_service, ideas, installer_client, shortcuts, speed
+from . import apps_service, health, ideas, installer_client, shortcuts, speed
 from .log_view import parse_log
 from .mcp_probe import list_remote_tools
 from .mcp_server import DeviceTokenAuth, build_mcp_app, mcp
@@ -267,6 +267,7 @@ async def dashboard(request: Request):
             "device_token": settings.get("device_token", ""),
             "console_url": str(request.base_url).rstrip("/"),
             "speed": speed.summary(),
+            "health": health.problems(),
             "s": settings,
         },
     )
