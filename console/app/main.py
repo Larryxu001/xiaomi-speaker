@@ -490,6 +490,11 @@ async def api_test_provider(request: Request, probe: ProviderProbe):
     return JSONResponse({"ok": True, "message": message})
 
 
+def _length_options() -> list[tuple[str, str]]:
+    from .scheduler import LENGTH_OPTIONS
+    return LENGTH_OPTIONS
+
+
 @app.get("/tasks", response_class=HTMLResponse)
 async def tasks_get(request: Request):
     redirect = _require_login(request)
@@ -510,6 +515,7 @@ def _render_tasks(request: Request, error: str = "", form: dict | None = None, s
     return templates.TemplateResponse(
         request, "tasks.html", {"tasks": tasks, "error": error, "form": form or {}, "sources": srcs,
                                 "problems": problems,
+                                "length_options": _length_options(),
                                 "source_kinds": sources.KINDS, "newsnow_platforms": sources.NEWSNOW_PLATFORMS,
                                 "rsshub_routes": sources.RSSHUB_ROUTES,
                                 "source_error": request.query_params.get("source_err", "")},
@@ -607,7 +613,8 @@ async def tasks_length(request: Request, task_id: int, length: str = Form(...)):
     redirect = _require_login(request)
     if redirect:
         return redirect
-    if length in ("short", "standard", "long", "full"):
+    from .scheduler import LENGTHS
+    if length in LENGTHS:
         with get_conn() as conn:
             conn.execute("UPDATE tasks SET length = ? WHERE id = ?", (length, task_id))
             conn.commit()

@@ -204,7 +204,23 @@ LENGTHS = {
     "standard": ("标准", "3 分钟左右，约 750 字，挑最重要的 6 到 8 条", 1600),
     "long": ("详细", "5 分钟左右，约 1300 字，尽量覆盖资料里的重要内容", 2600),
     "full": ("完整", "每个来源前 10 条，按顺序逐条完整播报", 2600),
+    # For "I want to know what every platform is talking about, as early as
+    # possible": everything in the material gets said, each thing once.
+    "sweep": ("全网速览", "把资料里出现的每个话题都说到，约 2200 字、6 到 8 分钟", 4000),
 }
+
+#: ``(key, label, hint)`` for the console's length pickers, in the order
+#: shown. One list so adding a length does not mean editing three files.
+LENGTH_OPTIONS = [(key, label, hint) for key, (label, hint, _) in LENGTHS.items()]
+
+_SWEEP_RULES = (
+    "这是一份「全网热点速览」，资料来自十几个平台的热榜，目的是让用户一次就知道今天各个渠道都在聊什么。\n"
+    "覆盖：资料里出现的每个话题都要说到，不要因为篇幅就丢掉后面的条目；越重要的多说一两句，次要的一句话带过。\n"
+    "去重：同一件事在多个平台出现时只讲一次，并点出它很热，比如「这条在华尔街见闻和金十数据都排在最热」。\n"
+    "结构：按话题分组（宏观、市场、公司、科技、国际、社会），组间用一句自然的过渡；"
+    "每条先说发生了什么，重要的再加一句为什么值得关注；数字要带单位。\n"
+    "不要逐个平台念，也不要在结尾做长篇总结，最后一句话收尾就行。"
+)
 
 
 async def _full_section(src: dict, settings: dict[str, str], topic: str, first: bool, last: bool) -> str | None:
@@ -274,17 +290,26 @@ async def _run_source_digest(task: dict, settings: dict[str, str], topic: str, s
     today = now.strftime("%-m月%-d日")
     greeting = ("早上好" if now.hour < 11 else "中午好" if now.hour < 13
                 else "下午好" if now.hour < 18 else "晚上好")
-    system = (
+    head = (
         "你是一位有经验的电台新闻主播，为用户的智能音箱写一段口播稿。稿子会被直接朗读，所以全部用口语，"
         "不用 Markdown、列表符号、编号符号、网址和括号注释。\n"
         f"篇幅：{length_rule}。不要因为资料多就只念标题，也不要为了凑字数说空话。\n"
-        "结构：开头一句问好并点明今天的日期和来源，比如「" + greeting + "，来看" + today + "的财经早餐」，问候语按现在的时间用「" + greeting + "」；"
-        "然后按主题归类播报（比如宏观政策、市场、公司、国际），用自然的过渡语连接；"
-        "每条讲清楚发生了什么，再用一句话说它为什么重要或有什么影响；数字要说清单位；"
-        "最后用一两句话收尾总结。\n"
+    )
+    tail = (
         "准确性：事实和数字只能来自资料。资料只有标题时（比如热搜），可以根据常识用一句话解释这是什么事，"
         "拿不准就只说标题，不要编造细节。"
     )
+    if (task.get("length") or "") == "sweep":
+        system = (head
+                  + f"开头一句问好并点明日期，比如「{greeting}，今天是{today}，先看全网热点」。\n"
+                  + _SWEEP_RULES + "\n" + tail)
+    else:
+        system = (head
+            + "结构：开头一句问好并点明今天的日期和来源，比如「" + greeting + "，来看" + today + "的财经早餐」，问候语按现在的时间用「" + greeting + "」；"
+            "然后按主题归类播报（比如宏观政策、市场、公司、国际），用自然的过渡语连接；"
+            "每条讲清楚发生了什么，再用一句话说它为什么重要或有什么影响；数字要说清单位；"
+            "最后用一两句话收尾总结。\n"
+            + tail)
     user = f"播报要求：{topic}\n\n资料：\n{material}"
     if failures:
         user += "\n\n（以下来源这次没取到，请在结尾用一句话说明：" + "；".join(f.split("：")[0] for f in failures) + "）"

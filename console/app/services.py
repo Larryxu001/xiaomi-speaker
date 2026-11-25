@@ -85,7 +85,7 @@ def create_task(name: str, kind: str, recurrence: str, run_at: str,
         cur = conn.execute(
             "INSERT INTO tasks (name, kind, recurrence, run_at, weekday, payload, source_ids, length) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (name[:40], kind, recurrence, normalized, wd, payload[:500], ",".join(map(str, source_ids)),
-             length if length in ("short", "standard", "long", "full") else "standard"),
+             length if length in _lengths() else "standard"),
         )
         conn.commit()
         return cur.lastrowid
@@ -125,6 +125,13 @@ def set_task_enabled(task_id: int, enabled: bool) -> None:
             (1 if enabled else 0, 1 if enabled else 0, task_id),
         )
         conn.commit()
+
+
+def _lengths() -> set[str]:
+    """The briefing lengths the scheduler knows. Imported here, not at module
+    level, because the scheduler pulls in the providers and sources."""
+    from .scheduler import LENGTHS
+    return set(LENGTHS)
 
 
 def set_task_skip_until(task_id: int, day: str) -> None:

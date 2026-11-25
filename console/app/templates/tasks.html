@@ -57,7 +57,7 @@
       <div class="field" style="margin-top:12px">
         <label for="length">播报长度</label>
         <select id="length" name="length">
-          {% for v, t in [('short', '简短，约 1 分钟'), ('standard', '标准，约 3 分钟'), ('long', '详细，约 5 分钟'), ('full', '完整：每个来源前 10 条，按顺序逐条播')] %}<option value="{{ v }}" {{ 'selected' if form.get('length', 'standard') == v }}>{{ t }}</option>{% endfor %}
+          {% for v, tl, hint in length_options %}<option value="{{ v }}" {{ 'selected' if form.get('length', 'standard') == v }}>{{ tl }}：{{ hint }}</option>{% endfor %}
         </select>
       </div>
       <p class="hint">勾选后只用这些来源的内容播报，不再联网随机搜索。不勾就按上面的话题联网搜索。来源在页面下方管理。</p>
@@ -106,7 +106,7 @@
           {% if t.source_names %}<div class="payload">来源：{{ t.source_names | join('、') }}
             <form class="inline" method="post" action="/tasks/{{ t.id }}/length" style="margin-left:6px">
               <select name="length" onchange="this.form.submit()" aria-label="播报长度" style="width:auto;padding:2px 6px;font-size:12px">
-                {% for v, tl in [('short', '简短'), ('standard', '标准'), ('long', '详细'), ('full', '完整')] %}<option value="{{ v }}" {{ 'selected' if (t.length or 'standard') == v }}>{{ tl }}</option>{% endfor %}
+                {% for v, tl, _hint in length_options %}<option value="{{ v }}" {{ 'selected' if (t.length or 'standard') == v }}>{{ tl }}</option>{% endfor %}
               </select>
             </form></div>{% endif %}
         </td>
