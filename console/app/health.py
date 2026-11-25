@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from .db import get_conn, get_settings, now_local
+from .db import get_conn, get_settings, now_local, queue_announcement
 
 OFFLINE_AFTER_S = 15 * 60       # the poller checks in every ~20s
 SILENT_DAYS = 2                 # an enabled daily briefing that hasn't run
@@ -35,12 +35,18 @@ def _ts(value) -> datetime | None:
 
 
 def _ago(when: datetime | None) -> str:
+    """"3 天前" / "14:05", for reading inside a sentence."""
     if not when:
         return "从来没有"
     days = (now_local() - when).days
-    if days >= 1:
-        return f"{days} 天前"
-    return when.strftime("%H:%M")
+    return f"{days} 天前" if days >= 1 else when.strftime("%H:%M")
+
+
+def _silent_for(when: datetime | None) -> str:
+    if not when:
+        return "一次都没播过"
+    days = (now_local() - when).days
+    return f"已经 {days} 天没播过" if days >= 1 else "今天还没播"
 
 
 def problems() -> list[dict]:
@@ -99,7 +105,7 @@ def problems() -> list[dict]:
             out.append({
                 "key": f"silent:{task['id']}",
                 "level": "坏了",
-                "text": f"「{name}」开着却 {_ago(last_run)} 没播过",
+                "text": f"「{name}」开着，{_silent_for(last_run)}",
                 "fix": "看「跳过的播报」里有没有记录，或让我查一次日志",
             })
 
@@ -159,7 +165,5 @@ def announce_new_problems() -> str:
     line = speak_line(items)
     if not line:
         return ""
-    with get_conn() as conn:
-        conn.execute("INSERT INTO announcements (task_id, text) VALUES (NULL, ?)", (line,))
-        conn.commit()
+    queue_announcement(line)
     return line

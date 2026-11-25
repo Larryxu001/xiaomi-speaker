@@ -241,6 +241,22 @@ def now_local(settings: dict[str, str] | None = None) -> datetime:
     return datetime.now(local_tz(settings))
 
 
+def queue_announcement(text: str, task_id: int | None = None) -> None:
+    """Queue one line for the speaker to read out.
+
+    Every caller goes through here so the timestamp goes through now_local()
+    like every other one the console stores. The table's own default is
+    SQLite's datetime('now'), which is UTC and naive, and it made queued
+    speech look eight hours older than it was.
+    """
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO announcements (task_id, text, created_at) VALUES (?, ?, ?)",
+            (task_id, text, now_local().isoformat()),
+        )
+        conn.commit()
+
+
 def get_settings() -> dict[str, str]:
     with get_conn() as conn:
         rows = conn.execute("SELECT key, value FROM settings").fetchall()

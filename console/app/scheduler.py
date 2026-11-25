@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
-from .db import get_conn, get_settings, local_tz, now_local
+from .db import get_conn, get_settings, local_tz, now_local, queue_announcement
 from .providers import ProviderError, _anthropic_root, web_search
 from .sources import gather_material, ids_from_text
 
@@ -324,7 +324,7 @@ async def queue_task_now(task: dict, settings: dict[str, str]) -> str:
         return ""
     with get_conn() as conn:
         for t in texts:
-            conn.execute("INSERT INTO announcements (task_id, text) VALUES (?, ?)", (task["id"], t))
+            queue_announcement(t, task["id"])
         conn.commit()
     text = "\n\n".join(texts)
     log.info("task %s (%s) queued announcement: %s", task["id"], task["kind"], text[:60])

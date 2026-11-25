@@ -34,7 +34,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth
 from .config_render import render_agent_yaml
-from .db import get_conn, get_settings, init_db, now_local, set_settings
+from .db import get_conn, get_settings, init_db, now_local, queue_announcement, set_settings
 from .providers import ProviderError, list_models, test_asr, test_llm, test_search, web_search
 from . import apps_service, health, ideas, installer_client, shortcuts, speed
 from .log_view import parse_log
@@ -315,7 +315,7 @@ async def tts_speaker_test(request: Request):
     if not request.session.get("logged_in"):
         return JSONResponse({"ok": False}, status_code=401)
     with get_conn() as conn:
-        conn.execute("INSERT INTO announcements (task_id, text) VALUES (NULL, ?)", ("你好，这是现在的音色，听起来怎么样？",))
+        queue_announcement("你好，这是现在的音色，听起来怎么样？")
         conn.commit()
     return JSONResponse({"ok": True})
 
@@ -658,9 +658,7 @@ async def announce_now(request: Request, text: str = Form(...)):
         return redirect
     text = " ".join(text.split())
     if text:
-        with get_conn() as conn:
-            conn.execute("INSERT INTO announcements (task_id, text) VALUES (NULL, ?)", (text,))
-            conn.commit()
+        queue_announcement(text)
     return RedirectResponse("/?msg=sent" if text else "/", status_code=303)
 
 

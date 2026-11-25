@@ -13,7 +13,7 @@ from datetime import datetime
 import httpx
 
 from . import music
-from .db import get_conn, get_settings, local_tz
+from .db import get_conn, get_settings, local_tz, queue_announcement
 
 log = logging.getLogger(__name__)
 
@@ -129,8 +129,5 @@ def _announce_expired() -> None:
         if src["config"].get("expired_told"):
             continue
         name = APP_NAMES[src["kind"]]
-        with get_conn() as conn:
-            conn.execute("INSERT INTO announcements (task_id, text) VALUES (NULL, ?)",
-                         (f"提醒一下，{name}的登录过期了，会员歌现在只能试听。有空到控制台的音乐页重新扫码登录一下。",))
-            conn.commit()
+        queue_announcement(f"提醒一下，{name}的登录过期了，会员歌现在只能试听。有空到控制台的音乐页重新扫码登录一下。")
         _save(src, {**src["config"], "expired_told": True})

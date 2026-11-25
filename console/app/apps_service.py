@@ -11,7 +11,7 @@ import asyncio
 import logging
 
 from . import installer_client as inst
-from .db import get_conn
+from .db import get_conn, queue_announcement
 from .services import ServiceError, delete_mcp_server, list_mcp_servers, save_mcp_server
 
 log = logging.getLogger("console.apps")
@@ -20,7 +20,7 @@ _followers: set[asyncio.Task] = set()
 
 def _announce(text: str) -> None:
     with get_conn() as conn:
-        conn.execute("INSERT INTO announcements (task_id, text) VALUES (NULL, ?)", (text,))
+        queue_announcement(text)
         conn.commit()
 
 
