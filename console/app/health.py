@@ -118,6 +118,25 @@ def problems() -> list[dict]:
             "fix": "多半是音箱没在线，或者播报脚本出错了",
         })
 
+    # Adding a source does nothing by itself: it has to be picked by a task.
+    # Twelve NewsNow platforms sat unused for nine days while the briefing
+    # that was meant to cover them ran with no sources at all.
+    with get_conn() as conn:
+        all_sources = [dict(r) for r in conn.execute("SELECT id, name FROM sources")]
+        picked: set[str] = set()
+        for row in conn.execute("SELECT source_ids FROM tasks"):
+            picked.update(x.strip() for x in (row[0] or "").split(",") if x.strip())
+    unused = [s for s in all_sources if str(s["id"]) not in picked]
+    if unused:
+        names = "、".join(s["name"] for s in unused[:3])
+        more = f" 等 {len(unused)} 个" if len(unused) > 3 else ""
+        out.append({
+            "key": "unused_sources",
+            "level": "注意",
+            "text": f"{names}{more}没有被任何播报用上，加进来的内容播不出去",
+            "fix": "到「定时任务」里编辑一条播报，把这些来源勾上",
+        })
+
     cutoff = now - timedelta(days=PROBLEM_DAYS)
     seen: set[str] = set()
     for problem in recent_problems:
