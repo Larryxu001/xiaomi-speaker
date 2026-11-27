@@ -108,7 +108,19 @@
               <select name="length" onchange="this.form.submit()" aria-label="播报长度" style="width:auto;padding:2px 6px;font-size:12px">
                 {% for v, tl, _hint in length_options %}<option value="{{ v }}" {{ 'selected' if (t.length or 'standard') == v }}>{{ tl }}</option>{% endfor %}
               </select>
-            </form></div>{% endif %}
+            </form></div>
+          <details class="src-edit">
+            <summary>改来源</summary>
+            <form method="post" action="/tasks/{{ t.id }}/sources">
+              <input type="hidden" name="source_order" value="{{ (t.source_id_list + (sources | map(attribute='id') | list)) | unique | join(',') }}">
+              <div class="chips">
+                {% for src in sources %}
+                <label class="chip"><input type="checkbox" name="source_ids" value="{{ src.id }}" {{ 'checked' if src.id in t.source_id_list }}> {{ src.name }}</label>
+                {% endfor %}
+              </div>
+              <button type="submit" class="btn-secondary">保存来源</button>
+            </form>
+          </details>{% endif %}
         </td>
         <td class="sched">
           {{ fmt_schedule(t) }}

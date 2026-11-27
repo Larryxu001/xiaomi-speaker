@@ -512,6 +512,8 @@ def _render_tasks(request: Request, error: str = "", form: dict | None = None, s
     names = {s["id"]: s["name"] for s in srcs}
     tasks = [{**dict(t), "source_names": [names.get(i, "已删除的来源") for i in sources.ids_from_text(t["source_ids"])]}
              for t in tasks]
+    for t in tasks:
+        t["source_id_list"] = sources.ids_from_text(t["source_ids"])
     return templates.TemplateResponse(
         request, "tasks.html", {"tasks": tasks, "error": error, "form": form or {}, "sources": srcs,
                                 "problems": problems,
@@ -619,6 +621,31 @@ async def tasks_length(request: Request, task_id: int, length: str = Form(...)):
             conn.execute("UPDATE tasks SET length = ? WHERE id = ?", (length, task_id))
             conn.commit()
     return RedirectResponse("/tasks", status_code=303)
+
+
+@app.post("/tasks/{task_id}/sources")
+async def tasks_sources(request: Request, task_id: int):
+    """Change which sources a briefing reads.
+
+    The sources were only selectable while creating a task, so changing which
+    platforms the morning sweep covers meant deleting and rebuilding it. The
+    scheduler reads this column at run time, so the next run uses whatever is
+    ticked here - nothing to redeploy or restart.
+    """
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    form_data = await request.form()
+    picked = {int(v) for v in form_data.getlist("source_ids") if str(v).isdigit()}
+    # The page submits the order the rows are shown in, so the briefing keeps
+    # reading them in that order and a newly ticked source lands in place.
+    shown = [int(v) for v in str(form_data.get("source_order", "")).split(",") if v.strip().isdigit()]
+    ordered = [i for i in shown if i in picked] + sorted(i for i in picked if i not in shown)
+    with get_conn() as conn:
+        conn.execute("UPDATE tasks SET source_ids = ? WHERE id = ?",
+                     (",".join(str(i) for i in ordered), task_id))
+        conn.commit()
+    return RedirectResponse("/tasks?msg=sources", status_code=303)
 
 
 @app.post("/tasks/{task_id}/toggle")

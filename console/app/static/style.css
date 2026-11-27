@@ -587,3 +587,10 @@ body.has-nowbar .main { padding-bottom: 88px; }
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
   line-height: 1.7; white-space: pre-wrap; word-break: break-all; overflow-x: auto;
 }
+
+/* 任务行里的「改来源」：平时收起，展开后勾选本任务要读的来源 */
+.src-edit { margin-top: 6px; }
+.src-edit summary { cursor: pointer; font-size: 12px; color: var(--muted); width: max-content; }
+.src-edit summary:hover { color: var(--accent, #ff6900); }
+.src-edit form { margin-top: 8px; display: grid; gap: 10px; justify-items: start; }
+.src-edit .chip { font-size: 12px; padding: 4px 10px; }
