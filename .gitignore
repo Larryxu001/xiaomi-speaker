@@ -38,3 +38,6 @@ deploy/flash-tool/oh2p-audit/
 # Console runtime data (SQLite with API keys) and local venvs
 console/data/
 console/.venv/
+
+# Daily log-review reports, written in Chinese for the owner only.
+日志排查/
